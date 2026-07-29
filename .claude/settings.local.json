@@ -12,7 +12,8 @@
       "Bash(python -)",
       "Bash(node -e \"console.log\\(JSON.stringify\\(require\\('./package.json'\\).scripts,null,1\\)\\)\")",
       "Bash(node --import @swc-node/register/esm-register src/tmp-env-test.ts)",
-      "Bash(node -e \"const j=require\\('./package.json'\\);console.log\\('engines:', JSON.stringify\\(j.engines||'non défini'\\)\\)\")"
+      "Bash(node -e \"const j=require\\('./package.json'\\);console.log\\('engines:', JSON.stringify\\(j.engines||'non défini'\\)\\)\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:4567/health)"
     ]
   }
 }
