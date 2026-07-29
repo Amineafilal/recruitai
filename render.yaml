@@ -1,0 +1,76 @@
+# Déploiement de l'API RecruitAI sur Render.
+#
+# Render lit ce fichier automatiquement (« Blueprint ») : le service, sa
+# région et ses réglages sont créés sans rien configurer à la main.
+#
+# Le site (apps/web) n'est PAS ici : il est déployé séparément sur Vercel.
+services:
+  - type: web
+    name: recruitai-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Contexte de build = racine du dépôt : le Dockerfile a besoin du
+    # package-lock.json et des package.json de tous les workspaces.
+    dockerContext: .
+    plan: free
+    # Francfort : les données candidats restent en Europe, cohérent avec
+    # l'argumentaire RGPD et avec Supabase, déjà hébergé en Irlande.
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # L'offre gratuite met le service en veille après 15 min d'inactivité.
+      # Une tâche planifiée démarrée à moitié consommerait des crédits Apify
+      # sans terminer son travail : on les coupe tant qu'on est sur ce palier.
+      # Repasser à "true" le jour du passage sur une offre payante.
+      - key: SCHEDULER_ENABLED
+        value: "false"
+
+      # sync: false => Render demande la valeur dans son interface et ne la
+      # stocke jamais dans le dépôt. Tous les secrets passent par là.
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: ADMIN_DATABASE_URL
+        sync: false
+      - key: AUTH_JWT_SECRET
+        sync: false
+
+      # À renseigner avec l'URL Vercel une fois le site déployé. Sans elles :
+      # liens d'email pointant vers localhost, et formulaire de contact bloqué
+      # par le navigateur.
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+      - key: RESEND_API_KEY
+        sync: false
+      - key: OUTREACH_FROM_EMAIL
+        sync: false
+      - key: CONTACT_TO_EMAIL
+        sync: false
+
+      - key: APIFY_TOKEN
+        sync: false
+      - key: APIFY_LINKEDIN_ACTOR_ID
+        value: harvestapi~linkedin-profile-search
+      - key: APIFY_LINKEDIN_MODE
+        value: Short
+      - key: APIFY_MAX_PROFILES_PER_SEARCH
+        value: "15"
+      - key: ENRICH_BATCH_SIZE
+        value: "100"
+      - key: SCRAPE_CREDITS_CAP
+        value: "500"
+
+      - key: MISTRAL_API_KEY
+        sync: false
+
+      - key: RGPD_RETENTION_MOIS
+        value: "24"
