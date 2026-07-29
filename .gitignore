@@ -10,3 +10,9 @@ dist/
 # des migrations déjà passées.
 *.log
 .DS_Store
+
+# Autorisations Claude Code propres à chaque machine : le fichier grossit à
+# chaque nouvelle commande approuvée. Le suivre génère du bruit permanent et
+# ferait s'écraser les autorisations entre développeurs.
+# .claude/launch.json reste suivi : il décrit comment lancer les serveurs.
+.claude/settings.local.json
