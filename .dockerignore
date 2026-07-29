@@ -1,0 +1,30 @@
+# Réinstallé proprement dans l'image par `npm ci`.
+node_modules
+**/node_modules
+
+# Artefacts de build locaux — inutiles et parfois incompatibles avec l'archi
+# du conteneur.
+dist
+**/dist
+.next
+**/.next
+.turbo
+**/.turbo
+*.tsbuildinfo
+
+# Secrets : ne doivent JAMAIS entrer dans une image, qui peut être poussée
+# vers un registre. La configuration vient des variables de l'hébergeur.
+.env
+.env.*
+!.env.example
+
+# apps/web et apps/worker ne sont volontairement PAS exclus ici : `npm ci`
+# exige que tous les package.json des workspaces soient présents pour valider
+# le lockfile. Leurs sources ne sont simplement jamais copiées dans l'image
+# (voir les COPY du Dockerfile, limités à packages/ et apps/api/).
+
+.git
+.github
+.claude
+*.log
+.DS_Store
