@@ -16,3 +16,6 @@ dist/
 # ferait s'écraser les autorisations entre développeurs.
 # .claude/launch.json reste suivi : il décrit comment lancer les serveurs.
 .claude/settings.local.json
+
+# Lien local vers le projet Vercel (propre à chaque machine).
+.vercel
