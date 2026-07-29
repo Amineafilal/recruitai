@@ -1,0 +1,46 @@
+{
+  "name": "@recruitai/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --import @swc-node/register/esm-register --watch src/main.ts",
+    "start": "node --import @swc-node/register/esm-register src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "tsx src/e2e-cvtheque.ts",
+    "test:webhook": "tsx src/e2e-webhook.ts",
+    "test:scheduler": "node --import @swc-node/register/esm-register src/e2e-scheduler.ts"
+  },
+  "dependencies": {
+    "@clerk/backend": "^1.15.4",
+    "@fastify/cors": "^8.5.0",
+    "@fastify/multipart": "^8.3.0",
+    "@nestjs/common": "^10.4.6",
+    "@nestjs/config": "^3.3.0",
+    "@nestjs/core": "^10.4.6",
+    "@nestjs/platform-fastify": "^10.4.6",
+    "@nestjs/schedule": "^4.1.2",
+    "@recruitai/ai": "*",
+    "@recruitai/db": "*",
+    "@recruitai/types": "*",
+    "@swc-node/register": "^1.12.1",
+    "@swc/core": "^1.15.46",
+    "bcryptjs": "^2.4.3",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.36.1",
+    "jsonwebtoken": "^9.0.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "svix": "^1.42.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

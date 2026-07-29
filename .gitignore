@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+.turbo/
+*.tsbuildinfo
+.env
+.env.local
+# drizzle/meta/ NE DOIT PAS être ignoré : _journal.json et les snapshots
+# suivent l'état appliqué des migrations. Sans eux, un déploiement rejouerait
+# des migrations déjà passées.
+*.log
+.DS_Store

@@ -1,0 +1,26 @@
+{
+  "name": "@recruitai/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx src/migrate.ts",
+    "rls": "tsx src/apply-rls.ts",
+    "check-isolation": "tsx src/check-isolation.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@recruitai/types": "*",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.36.1",
+    "postgres": "^3.4.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.28.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

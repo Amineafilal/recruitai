@@ -1,0 +1,319 @@
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { desc, eq, and, sql } from "drizzle-orm";
+import { withTenant, schema } from "@recruitai/db";
+import {
+  PIPELINE_LABELS,
+  statutValidationPour,
+  type PipelineStage,
+  type ValidationStatus,
+} from "@recruitai/types";
+import type { TimelineEvent } from "./timeline.types.js";
+
+/** Libellés lisibles des étapes, pour les phrases de la timeline. */
+const LIBELLES_ETAPE = PIPELINE_LABELS;
+
+@Injectable()
+export class SourcingService {
+  async shortlist(tenantId: string, jobId: string) {
+    return withTenant(tenantId, (tx) =>
+      tx
+        .select()
+        .from(schema.sourcingCandidates)
+        .where(and(eq(schema.sourcingCandidates.tenantId, tenantId), eq(schema.sourcingCandidates.jobId, jobId)))
+        // `nulls last` est indispensable : en tri décroissant Postgres place
+        // les NULL en tête, ce qui ferait remonter les candidats non notés
+        // au-dessus des meilleurs profils.
+        .orderBy(sql`${schema.sourcingCandidates.score} desc nulls last`),
+    );
+  }
+
+  /**
+   * Fiche complète d'un candidat : le profil brut, le poste auquel il est
+   * rattaché (pour l'ariane et le rappel des critères) et l'historique des
+   * notes de l'équipe.
+   */
+  async candidat(tenantId: string, candidateId: string) {
+    return withTenant(tenantId, async (tx) => {
+      const [candidat] = await tx
+        .select()
+        .from(schema.sourcingCandidates)
+        .where(eq(schema.sourcingCandidates.id, candidateId));
+      if (!candidat) throw new NotFoundException(`Candidat ${candidateId} introuvable`);
+
+      const [poste] = await tx.select().from(schema.jobs).where(eq(schema.jobs.id, candidat.jobId));
+      const notes = await tx
+        .select()
+        .from(schema.candidateNotes)
+        .where(eq(schema.candidateNotes.candidateId, candidateId))
+        .orderBy(desc(schema.candidateNotes.createdAt));
+
+      return { candidat, poste: poste ?? null, notes };
+    });
+  }
+
+  /**
+   * Déplace un candidat dans le pipeline et journalise le mouvement.
+   *
+   * Aucune transition n'est interdite : un recruteur doit pouvoir corriger une
+   * erreur de manipulation en ramenant un candidat en arrière, et les
+   * parcours réels sautent régulièrement des étapes (un candidat recommandé
+   * passe directement en entretien).
+   */
+  async deplacerEtape(
+    tenantId: string,
+    candidateId: string,
+    etape: PipelineStage,
+    acteurUserId: string,
+    commentaire?: string,
+  ) {
+    return withTenant(tenantId, async (tx) => {
+      const [candidat] = await tx
+        .select()
+        .from(schema.sourcingCandidates)
+        .where(eq(schema.sourcingCandidates.id, candidateId));
+      if (!candidat) throw new NotFoundException(`Candidat ${candidateId} introuvable`);
+
+      // Déplacement vers l'étape déjà courante : on ne journalise pas, sinon
+      // un glisser-déposer relâché au même endroit polluerait l'historique.
+      if (candidat.etape === etape) return candidat;
+
+      const [updated] = await tx
+        .update(schema.sourcingCandidates)
+        .set({
+          etape,
+          // L'ancien champ reste cohérent tant qu'il n'est pas supprimé.
+          statutValidation: statutValidationPour(etape),
+        })
+        .where(eq(schema.sourcingCandidates.id, candidateId))
+        .returning();
+
+      // Email dénormalisé sur l'événement : l'historique doit rester lisible
+      // même après le départ du collègue (la FK passe alors à null).
+      const [auteur] = await tx
+        .select({ email: schema.users.email })
+        .from(schema.users)
+        .where(eq(schema.users.id, acteurUserId));
+
+      await tx.insert(schema.candidateStageEvents).values({
+        tenantId,
+        candidateId,
+        etapeAvant: candidat.etape,
+        etapeApres: etape,
+        auteurUserId: acteurUserId,
+        auteurEmail: auteur?.email ?? "inconnu",
+        commentaire: commentaire?.trim() || null,
+      });
+
+      return updated;
+    });
+  }
+
+  /**
+   * Timeline complète d'un candidat : tout ce qui lui est arrivé, du plus
+   * récent au plus ancien.
+   *
+   * Agrégation à la lecture plutôt que table unique : chaque source garde ses
+   * règles propres (les notes sont supprimables, les mouvements d'étape sont
+   * un journal immuable). Le volume par candidat se compte en dizaines
+   * d'événements, la fusion en mémoire est donc largement suffisante.
+   */
+  async timeline(tenantId: string, candidateId: string): Promise<TimelineEvent[]> {
+    return withTenant(tenantId, async (tx) => {
+      const [candidat] = await tx
+        .select()
+        .from(schema.sourcingCandidates)
+        .where(eq(schema.sourcingCandidates.id, candidateId));
+      if (!candidat) throw new NotFoundException(`Candidat ${candidateId} introuvable`);
+
+      const [etapes, notes, activites] = await Promise.all([
+        tx
+          .select()
+          .from(schema.candidateStageEvents)
+          .where(eq(schema.candidateStageEvents.candidateId, candidateId)),
+        tx.select().from(schema.candidateNotes).where(eq(schema.candidateNotes.candidateId, candidateId)),
+        tx
+          .select()
+          .from(schema.candidateActivities)
+          .where(eq(schema.candidateActivities.candidateId, candidateId)),
+      ]);
+
+      const evenements: TimelineEvent[] = [];
+
+      // 1. Entrée dans la base — toujours le premier événement.
+      evenements.push({
+        id: `sourcing-${candidat.id}`,
+        type: "sourcing",
+        resume:
+          candidat.statutScoring === "echec"
+            ? `Candidat sourcé sur ${candidat.source} — scoring impossible`
+            : `Candidat sourcé sur ${candidat.source} et noté ${candidat.score}/100`,
+        details: candidat.scoringJustification,
+        auteurEmail: "agent IA",
+        auteurUserId: null,
+        horodatage: candidat.createdAt.toISOString(),
+        meta: { score: candidat.score, source: candidat.source },
+        supprimable: false,
+      });
+
+      // 2. Mouvements de pipeline. L'événement de reprise (etapeAvant null)
+      // fait doublon avec le sourcing ci-dessus : on l'écarte.
+      for (const e of etapes) {
+        if (e.etapeAvant === null) continue;
+        evenements.push({
+          id: e.id,
+          type: "etape",
+          resume: `${LIBELLES_ETAPE[e.etapeAvant]} → ${LIBELLES_ETAPE[e.etapeApres]}`,
+          details: e.commentaire,
+          auteurEmail: e.auteurEmail,
+          auteurUserId: e.auteurUserId,
+          horodatage: e.createdAt.toISOString(),
+          meta: { avant: e.etapeAvant, apres: e.etapeApres },
+          supprimable: false,
+        });
+      }
+
+      // 3. Notes de l'équipe.
+      for (const n of notes) {
+        evenements.push({
+          id: n.id,
+          type: "note",
+          resume: "Note ajoutée",
+          details: n.contenu,
+          auteurEmail: n.auteurEmail,
+          auteurUserId: n.auteurUserId,
+          horodatage: n.createdAt.toISOString(),
+          supprimable: true,
+        });
+      }
+
+      // 4. Activités (score recalculé, appels, emails).
+      for (const a of activites) {
+        evenements.push({
+          id: a.id,
+          type: a.type,
+          resume: a.resume,
+          details: a.details,
+          auteurEmail: a.auteurEmail,
+          auteurUserId: a.auteurUserId,
+          horodatage: a.createdAt.toISOString(),
+          meta: a.meta as Record<string, unknown> | null,
+          supprimable: false,
+        });
+      }
+
+      return evenements.sort((a, b) => b.horodatage.localeCompare(a.horodatage));
+    });
+  }
+
+  /** Consigne un appel passé au candidat. */
+  async loggerAppel(
+    tenantId: string,
+    candidateId: string,
+    acteurUserId: string,
+    resume: string,
+    details?: string,
+  ) {
+    return withTenant(tenantId, async (tx) => {
+      const [candidat] = await tx
+        .select({ id: schema.sourcingCandidates.id })
+        .from(schema.sourcingCandidates)
+        .where(eq(schema.sourcingCandidates.id, candidateId));
+      if (!candidat) throw new NotFoundException(`Candidat ${candidateId} introuvable`);
+
+      const [auteur] = await tx
+        .select({ email: schema.users.email })
+        .from(schema.users)
+        .where(eq(schema.users.id, acteurUserId));
+
+      const [activite] = await tx
+        .insert(schema.candidateActivities)
+        .values({
+          tenantId,
+          candidateId,
+          type: "appel",
+          resume,
+          details: details?.trim() || null,
+          auteurUserId: acteurUserId,
+          auteurEmail: auteur?.email ?? "inconnu",
+        })
+        .returning();
+      return activite;
+    });
+  }
+
+  /** Historique des mouvements d'un candidat, du plus récent au plus ancien. */
+  async historique(tenantId: string, candidateId: string) {
+    return withTenant(tenantId, (tx) =>
+      tx
+        .select()
+        .from(schema.candidateStageEvents)
+        .where(eq(schema.candidateStageEvents.candidateId, candidateId))
+        .orderBy(desc(schema.candidateStageEvents.createdAt)),
+    );
+  }
+
+  /**
+   * @deprecated Remplacé par deplacerEtape. Conservé le temps que tous les
+   * appelants soient migrés vers le pipeline.
+   */
+  async setValidation(tenantId: string, candidateId: string, statut: ValidationStatus) {
+    const etape: PipelineStage = statut === "valide" ? "retenu" : statut === "rejete" ? "rejete" : "a_valider";
+    return withTenant(tenantId, async (tx) => {
+      const [updated] = await tx
+        .update(schema.sourcingCandidates)
+        .set({ statutValidation: statut, etape })
+        .where(eq(schema.sourcingCandidates.id, candidateId))
+        .returning();
+      if (!updated) throw new NotFoundException(`Candidat ${candidateId} introuvable`);
+      return updated;
+    });
+  }
+
+  async ajouterNote(tenantId: string, candidateId: string, auteurUserId: string, contenu: string) {
+    return withTenant(tenantId, async (tx) => {
+      // Vérifie l'existence du candidat DANS le tenant avant d'écrire : sans
+      // ça, une note pourrait être créée en référence à un id inexistant et
+      // la FK ferait remonter une erreur Postgres brute au lieu d'un 404.
+      const [candidat] = await tx
+        .select({ id: schema.sourcingCandidates.id })
+        .from(schema.sourcingCandidates)
+        .where(eq(schema.sourcingCandidates.id, candidateId));
+      if (!candidat) throw new NotFoundException(`Candidat ${candidateId} introuvable`);
+
+      // L'email est dénormalisé sur la note pour rester lisible même après le
+      // départ du collègue (la FK passe alors à null).
+      const [auteur] = await tx
+        .select({ email: schema.users.email })
+        .from(schema.users)
+        .where(eq(schema.users.id, auteurUserId));
+
+      const [note] = await tx
+        .insert(schema.candidateNotes)
+        .values({
+          tenantId,
+          candidateId,
+          auteurUserId,
+          auteurEmail: auteur?.email ?? "inconnu",
+          contenu,
+        })
+        .returning();
+      return note;
+    });
+  }
+
+  /** Une note ne peut être supprimée que par son auteur ou par un admin. */
+  async supprimerNote(
+    tenantId: string,
+    noteId: string,
+    acteur: { userId: string; role: string },
+  ): Promise<void> {
+    await withTenant(tenantId, async (tx) => {
+      const [note] = await tx.select().from(schema.candidateNotes).where(eq(schema.candidateNotes.id, noteId));
+      if (!note) throw new NotFoundException("Note introuvable");
+      if (note.auteurUserId !== acteur.userId && acteur.role !== "admin") {
+        throw new ForbiddenException("Vous ne pouvez supprimer que vos propres notes.");
+      }
+      await tx.delete(schema.candidateNotes).where(eq(schema.candidateNotes.id, noteId));
+    });
+  }
+}

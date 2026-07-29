@@ -1,0 +1,293 @@
+// Formes de données côté UI. `profil` suit le schéma harvestapi renvoyé par
+// l'actor Apify LinkedIn (voir apps/worker) ; on ne type que ce qu'on affiche.
+
+// harvestapi renvoie certains champs sous forme { linkedinText: "..." } plutôt
+// qu'en texte brut.
+export type HarvestText = string | { linkedinText?: string; text?: string } | null | undefined;
+
+export interface HarvestDate {
+  year?: number;
+  month?: number;
+}
+
+export interface HarvestPosition {
+  title?: HarvestText;
+  companyName?: HarvestText;
+  description?: HarvestText;
+  startedOn?: HarvestDate;
+  endedOn?: HarvestDate;
+  current?: boolean;
+  /** Ancienneté dans le RÔLE. */
+  tenureAtPosition?: { numYears?: number; numMonths?: number };
+  /** Ancienneté dans l'ENTREPRISE, tous rôles confondus. */
+  tenureAtCompany?: { numYears?: number; numMonths?: number };
+}
+
+/** Expérience nettoyée, prête à afficher. */
+export interface ExperienceNormalisee {
+  titre: string;
+  entreprise: string;
+  description: string;
+  /** Durée dans le rôle, en mois. Null si indéterminable. */
+  dureeMois: number | null;
+  /** Durée dans l'entreprise, affichée seulement si elle diffère du rôle. */
+  dureeEntrepriseMois: number | null;
+  enCours: boolean;
+}
+
+function moisDepuisTenure(t?: { numYears?: number; numMonths?: number }): number | null {
+  if (!t) return null;
+  const y = t.numYears ?? 0;
+  const m = t.numMonths ?? 0;
+  const total = y * 12 + m;
+  return total > 0 ? total : null;
+}
+
+/**
+ * Durée calculée depuis les dates — source de vérité quand elles existent.
+ * Les champs `tenure*` de l'actor sont des valeurs pré-calculées qui peuvent
+ * être incohérentes entre elles ; les dates, elles, ne mentent pas.
+ */
+function moisDepuisDates(debut?: HarvestDate, fin?: HarvestDate, enCours?: boolean): number | null {
+  if (!debut?.year) return null;
+  const d = new Date(debut.year, (debut.month ?? 1) - 1);
+  const f = enCours || !fin?.year ? new Date() : new Date(fin.year, (fin.month ?? 1) - 1);
+  const mois = (f.getFullYear() - d.getFullYear()) * 12 + (f.getMonth() - d.getMonth());
+  return mois >= 0 ? mois : null;
+}
+
+/** Clé de comparaison : entreprise + intitulé, insensible à la casse et aux espaces. */
+function cleExperience(titre: string, entreprise: string): string {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  return `${norm(entreprise)}::${norm(titre)}`;
+}
+
+/**
+ * Fusionne, dédoublonne et recalcule les expériences d'un profil.
+ *
+ * L'actor renvoie les expériences dans deux tableaux distincts (`experience`
+ * et `currentPositions`) qui se recoupent : un poste actuel figure souvent
+ * dans les deux. Les concaténer produit des lignes en double, avec des durées
+ * qui semblent contradictoires parce que l'une porte sur le rôle et l'autre
+ * sur l'entreprise.
+ *
+ * On dédoublonne donc sur entreprise + intitulé, et on garde la version la
+ * plus complète de chaque doublon.
+ */
+export function experiencesNormalisees(profil: CandidateProfil): ExperienceNormalisee[] {
+  const brutes = [...(profil.experience ?? []), ...(profil.currentPositions ?? [])];
+  const parCle = new Map<string, ExperienceNormalisee>();
+
+  for (const exp of brutes) {
+    const titre = asText(exp.title);
+    const entreprise = asText(exp.companyName);
+    if (!titre && !entreprise) continue;
+
+    // Priorité aux dates ; sinon on retombe sur la durée pré-calculée du rôle.
+    const dureeMois = moisDepuisDates(exp.startedOn, exp.endedOn, exp.current) ?? moisDepuisTenure(exp.tenureAtPosition);
+    const dureeEntrepriseMois = moisDepuisTenure(exp.tenureAtCompany);
+
+    const candidate: ExperienceNormalisee = {
+      titre,
+      entreprise,
+      description: asText(exp.description),
+      dureeMois,
+      dureeEntrepriseMois,
+      enCours: Boolean(exp.current),
+    };
+
+    const cle = cleExperience(titre, entreprise);
+    const existante = parCle.get(cle);
+    if (!existante) {
+      parCle.set(cle, candidate);
+      continue;
+    }
+
+    // Doublon : on complète champ par champ plutôt que d'écraser, et on retient
+    // la durée la plus longue — une entrée tronquée ne doit pas raccourcir une
+    // entrée complète.
+    parCle.set(cle, {
+      titre: existante.titre || candidate.titre,
+      entreprise: existante.entreprise || candidate.entreprise,
+      description: existante.description || candidate.description,
+      dureeMois: Math.max(existante.dureeMois ?? 0, candidate.dureeMois ?? 0) || null,
+      dureeEntrepriseMois:
+        Math.max(existante.dureeEntrepriseMois ?? 0, candidate.dureeEntrepriseMois ?? 0) || null,
+      enCours: existante.enCours || candidate.enCours,
+    });
+  }
+
+  // Les postes en cours d'abord, puis par durée décroissante.
+  return [...parCle.values()].sort((a, b) => {
+    if (a.enCours !== b.enCours) return a.enCours ? -1 : 1;
+    return (b.dureeMois ?? 0) - (a.dureeMois ?? 0);
+  });
+}
+
+/**
+ * Coordonnées exploitables d'un candidat.
+ *
+ * Le scraping LinkedIn ne renvoie jamais d'email ni de téléphone : ces champs
+ * ne sont renseignés que pour les profils venus de la CVthèque de l'agence
+ * (import CSV), où le candidat les a fournis lui-même. On les cherche donc à
+ * plusieurs emplacements selon l'origine du profil.
+ */
+export function coordonneesCandidat(profil: CandidateProfil): {
+  email: string | null;
+  telephone: string | null;
+} {
+  const p = profil as CandidateProfil & Record<string, unknown>;
+  const chaine = (v: unknown): string | null => {
+    const s = typeof v === "string" ? v.trim() : "";
+    return s.length > 0 ? s : null;
+  };
+  const contactImporte = (p.contact ?? {}) as Record<string, unknown>;
+
+  return {
+    email: chaine(p.email) ?? chaine(p.emailAddress) ?? chaine(contactImporte.email),
+    telephone:
+      chaine(p.phone) ?? chaine(p.phoneNumber) ?? chaine(p.mobile) ?? chaine(contactImporte.telephone),
+  };
+}
+
+/** « 4 ans 11 mois », « 8 mois », « 2 ans ». */
+export function dureeLisible(mois: number | null): string {
+  if (!mois || mois <= 0) return "";
+  const ans = Math.floor(mois / 12);
+  const reste = mois % 12;
+  const parts: string[] = [];
+  if (ans > 0) parts.push(`${ans} an${ans > 1 ? "s" : ""}`);
+  if (reste > 0) parts.push(`${reste} mois`);
+  return parts.join(" ");
+}
+
+export interface HarvestEducation {
+  schoolName?: HarvestText;
+  degree?: HarvestText;
+  fieldOfStudy?: HarvestText;
+  period?: HarvestText;
+}
+
+export interface CandidateProfil {
+  firstName?: string;
+  lastName?: string;
+  headline?: HarvestText;
+  about?: HarvestText;
+  linkedinUrl?: string;
+  location?: HarvestText;
+  pictureUrl?: string;
+  currentPositions?: HarvestPosition[];
+  experience?: HarvestPosition[];
+  education?: HarvestEducation[];
+  skills?: (HarvestText | { name?: HarvestText })[];
+}
+
+/** Libellé d'une compétence, que l'actor la renvoie en texte ou en objet. */
+export function skillLabel(s: HarvestText | { name?: HarvestText }): string {
+  if (s && typeof s === "object" && "name" in s) return asText(s.name);
+  return asText(s as HarvestText);
+}
+
+export interface CandidateNoteView {
+  id: string;
+  contenu: string;
+  auteurEmail: string;
+  auteurUserId: string | null;
+  createdAt: string;
+}
+
+export interface CandidateDetailView {
+  candidat: SourcingCandidateView & { jobId: string; createdAt: string };
+  poste: JobView | null;
+  notes: CandidateNoteView[];
+}
+
+/** Extrait une chaîne d'un champ qui peut être un texte ou un objet {linkedinText}. */
+export function asText(v: HarvestText): string {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  return v.linkedinText ?? v.text ?? "";
+}
+
+export interface SourcingCandidateView {
+  id: string;
+  source: string;
+  /** Null quand le scoring a échoué — distinct d'un score de 0. */
+  score: number | null;
+  statutScoring?: "ok" | "echec";
+  scoringErreur?: string | null;
+  scoringJustification?: string | null;
+  scoringTentatives?: number;
+  /** Étape du pipeline. Optionnel : les données de démo ne la portent pas. */
+  etape?:
+    | "source"
+    | "a_valider"
+    | "retenu"
+    | "entretien_planifie"
+    | "entretien_realise"
+    | "offre_envoyee"
+    | "embauche"
+    | "rejete";
+  /** @deprecated remplacé par `etape`, gardé synchronisé côté API. */
+  statutValidation: string;
+  profil: CandidateProfil;
+}
+
+export interface JobView {
+  id: string;
+  statut: string;
+  createdAt: string;
+  criteres: {
+    titre: string;
+    competences: string[];
+    /** @deprecated postes créés avant le multi-villes — lire via villesDuPoste(). */
+    localisation?: string;
+    localisations?: string[];
+    seniorite?: string;
+  };
+  // Optionnel : nombre de candidats en shortlist (agrégé côté liste).
+  shortlistCount?: number;
+}
+
+/**
+ * Villes d'un poste, ancienne ou nouvelle forme. Reprend la logique de
+ * villesDuPoste() de @recruitai/types ; dupliquée ici pour que les composants
+ * client n'aient pas à importer le paquet serveur.
+ */
+export function villesJob(criteres: JobView["criteres"]): string[] {
+  if (criteres.localisations?.length) return criteres.localisations;
+  return criteres.localisation ? [criteres.localisation] : [];
+}
+
+export interface CvthequeProfileView {
+  id: string;
+  statutChaud: boolean;
+  dernierEnrichissementAt: string | null;
+  contact: {
+    prenom?: string;
+    nom?: string;
+    email?: string;
+    poste?: string;
+    entreprise?: string;
+    localisation?: string;
+    linkedinUrl?: string;
+  };
+}
+
+export function candidateName(p: CandidateProfil): string {
+  return [p.firstName, p.lastName].filter(Boolean).join(" ") || "Candidat";
+}
+
+export function candidateTitle(p: CandidateProfil): string {
+  const pos = p.currentPositions?.[0];
+  if (!pos) return "";
+  return [asText(pos.title), asText(pos.companyName)].filter(Boolean).join(" · ");
+}
+
+export function candidateLocation(p: CandidateProfil): string {
+  return asText(p.location);
+}
+
+export function initials(p: CandidateProfil): string {
+  return `${p.firstName?.[0] ?? ""}${p.lastName?.[0] ?? ""}`.toUpperCase() || "?";
+}

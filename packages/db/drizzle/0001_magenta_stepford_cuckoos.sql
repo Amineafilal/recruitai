@@ -1,0 +1,2 @@
+ALTER TABLE "cvtheque_profiles" ADD COLUMN "dedupe_key" text NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "cvtheque_profiles_tenant_dedupe_idx" ON "cvtheque_profiles" USING btree ("tenant_id","dedupe_key");
