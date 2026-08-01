@@ -83,18 +83,20 @@ export class SourcingRunner {
       statutScoring: "ok" | "echec";
       scoringErreur: string | null;
       scoringJustification: string | null;
+      scoringCriteres: unknown;
     }[] = [];
 
     let echecs = 0;
     for (const profil of items) {
       try {
-        const { score, justification } = await scoreCandidate({ criteres, profil });
+        const { score, justification, criteres: detail } = await scoreCandidate({ criteres, profil });
         scored.push({
           profil,
           score,
           statutScoring: "ok",
           scoringErreur: null,
           scoringJustification: justification,
+          scoringCriteres: detail,
         });
       } catch (err) {
         echecs += 1;
@@ -105,6 +107,7 @@ export class SourcingRunner {
           statutScoring: "echec",
           scoringErreur: resumeErreurScoring(err),
           scoringJustification: null,
+          scoringCriteres: null,
         });
       }
     }
@@ -120,6 +123,7 @@ export class SourcingRunner {
             statutScoring: c.statutScoring,
             scoringErreur: c.scoringErreur,
             scoringJustification: c.scoringJustification,
+            scoringCriteres: c.scoringCriteres,
             scoringTentatives: 1,
             profil: c.profil,
             statutValidation: "a_valider" as const,
@@ -177,7 +181,10 @@ export class SourcingRunner {
       }
 
       try {
-        const { score, justification } = await scoreCandidate({ criteres, profil: candidat.profil });
+        const { score, justification, criteres: detail } = await scoreCandidate({
+          criteres,
+          profil: candidat.profil,
+        });
         await withTenant(tenantId, async (tx) => {
           await tx
             .update(schema.sourcingCandidates)
@@ -186,6 +193,7 @@ export class SourcingRunner {
               statutScoring: "ok",
               scoringErreur: null,
               scoringJustification: justification,
+              scoringCriteres: detail,
               scoringTentatives: candidat.scoringTentatives + 1,
             })
             .where(eq(schema.sourcingCandidates.id, candidat.id));

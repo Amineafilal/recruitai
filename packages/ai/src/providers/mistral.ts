@@ -1,5 +1,6 @@
 import { buildScoringPrompt } from "../prompt.js";
-import { ScoringResultSchema, type ScoringInput, type ScoringProvider, type ScoringResult } from "../types.js";
+import { parserReponseIa } from "../parse-reponse.js";
+import type { ScoringInput, ScoringProvider, ScoringResult } from "../types.js";
 
 export function createMistralProvider(apiKey: string): ScoringProvider {
   return {
@@ -28,7 +29,7 @@ export function createMistralProvider(apiKey: string): ScoringProvider {
       if (!content) {
         throw new Error("Mistral scoring returned no content");
       }
-      return ScoringResultSchema.parse(JSON.parse(content));
+      return parserReponseIa(content);
     },
   };
 }

@@ -20,6 +20,7 @@ import {
 import { ValidationActions } from "./ValidationActions";
 import { NotesPanel } from "./NotesPanel";
 import { Timeline, type TimelineEventView } from "./Timeline";
+import { ScoreDetail } from "@/components/ScoreDetail";
 
 export const dynamic = "force-dynamic";
 
@@ -131,12 +132,21 @@ export default async function CandidatPage({
           </p>
         </div>
       ) : (
-        candidat.scoringJustification && (
-          <div className="card mb-6 border-l-4 border-l-accent p-5">
-            <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wider text-ink-faint">
-              Pourquoi ce score
-            </h2>
-            <p className="text-[14px] leading-relaxed text-ink-soft">{candidat.scoringJustification}</p>
+        (candidat.scoringJustification || candidat.scoringCriteres) && (
+          <div className="mb-6 flex flex-col gap-4">
+            {candidat.scoringJustification && (
+              <div className="card border-l-4 border-l-accent p-5">
+                <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wider text-ink-faint">
+                  Pourquoi ce score
+                </h2>
+                <p className="text-[14px] leading-relaxed text-ink-soft">
+                  {candidat.scoringJustification}
+                </p>
+              </div>
+            )}
+            {candidat.scoringCriteres && (
+              <ScoreDetail criteres={candidat.scoringCriteres} score={candidat.score} />
+            )}
           </div>
         )
       )}

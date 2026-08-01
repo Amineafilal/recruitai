@@ -209,6 +209,31 @@ export function asText(v: HarvestText): string {
   return v.linkedinText ?? v.text ?? "";
 }
 
+/**
+ * Détail du score par critère. Miroir de CriteresEvalues de @recruitai/ai :
+ * dupliqué ici pour que les composants client n'embarquent pas le paquet
+ * serveur. Toute modification doit être répercutée des deux côtés.
+ */
+export interface CritereScoreView {
+  note: number | null;
+  commentaire: string;
+}
+
+export interface CriteresScoreView {
+  competences: CritereScoreView;
+  experience: CritereScoreView;
+  seniorite: CritereScoreView;
+  localisation: CritereScoreView;
+}
+
+/** Pondération affichée au recruteur — identique à CRITERES_SCORING. */
+export const PONDERATION_SCORE = [
+  { cle: "competences" as const, libelle: "Compétences demandées", poids: 0.4 },
+  { cle: "experience" as const, libelle: "Expérience pertinente", poids: 0.25 },
+  { cle: "seniorite" as const, libelle: "Niveau de séniorité", poids: 0.2 },
+  { cle: "localisation" as const, libelle: "Localisation", poids: 0.15 },
+];
+
 export interface SourcingCandidateView {
   id: string;
   source: string;
@@ -217,6 +242,7 @@ export interface SourcingCandidateView {
   statutScoring?: "ok" | "echec";
   scoringErreur?: string | null;
   scoringJustification?: string | null;
+  scoringCriteres?: CriteresScoreView | null;
   scoringTentatives?: number;
   /** Étape du pipeline. Optionnel : les données de démo ne la portent pas. */
   etape?:

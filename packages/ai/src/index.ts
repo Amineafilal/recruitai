@@ -2,7 +2,15 @@ import { createMistralProvider } from "./providers/mistral.js";
 import { createOpenAiProvider } from "./providers/openai.js";
 import type { ScoringInput, ScoringProvider, ScoringResult } from "./types.js";
 
-export type { ScoringInput, ScoringProvider, ScoringResult } from "./types.js";
+export type {
+  ScoringInput,
+  ScoringProvider,
+  ScoringResult,
+  CritereEvalue,
+  CriteresEvalues,
+  CleCritere,
+} from "./types.js";
+export { CRITERES_SCORING, calculerScore, scorePlafonne } from "./types.js";
 
 /**
  * Mistral is the default provider (données EU, argument RGPD), OpenAI is a
