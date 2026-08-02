@@ -7,6 +7,26 @@ interface ApifyRun {
   id: string;
   status: string;
   defaultDatasetId: string;
+  /**
+   * Message du fournisseur. Décisif : un actor qui a épuisé son quota gratuit
+   * renvoie SUCCEEDED avec zéro résultat, indiscernable d'une recherche sans
+   * candidat. Seul ce champ dit la différence.
+   */
+  statusMessage?: string | null;
+}
+
+/**
+ * Motifs signalant un arrêt pour cause de quota et non de résultat vide.
+ * Le message exact dépend de l'auteur de l'actor, d'où la détection large.
+ */
+const MOTIFS_QUOTA = /limit reached|run limit|quota|upgrade to a paid|exceeded/i;
+
+/** Levée quand l'actor s'est arrêté faute de quota, pas faute de candidats. */
+export class QuotaScrapingEpuiseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "QuotaScrapingEpuiseError";
+  }
 }
 
 /**
@@ -59,7 +79,24 @@ export class ApifyService {
       `${APIFY_API_BASE}/datasets/${cur.defaultDatasetId}/items?token=${token}&format=json`,
     );
     const items = (await ds.json()) as T[];
-    this.logger.log(`Run Apify ${run.id} terminé : ${items.length} élément(s).`);
+
+    // Un run vide ET porteur d'un message de quota n'est PAS une recherche
+    // infructueuse : c'est une panne de configuration. La confondre avec un
+    // résultat vide laisse le recruteur devant un écran « recherche en
+    // cours… » qui ne se résoudra jamais.
+    const message = cur.statusMessage ?? "";
+    if (items.length === 0 && MOTIFS_QUOTA.test(message)) {
+      throw new QuotaScrapingEpuiseError(
+        `L'actor Apify a refusé de s'exécuter : « ${message} ». ` +
+          `Le quota du compte de scraping est épuisé — aucun candidat ne sera trouvé ` +
+          `tant qu'il n'est pas rétabli.`,
+      );
+    }
+
+    this.logger.log(
+      `Run Apify ${run.id} terminé : ${items.length} élément(s).` +
+        (message ? ` Message : ${message}` : ""),
+    );
     return { runId: run.id, items };
   }
 }

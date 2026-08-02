@@ -3,7 +3,7 @@ import { and, eq, lt } from "drizzle-orm";
 import { getAdminDb, withTenant, schema } from "@recruitai/db";
 import { scoreCandidate } from "@recruitai/ai";
 import { villesDuPoste, type JobCriteria } from "@recruitai/types";
-import { ApifyService } from "./apify.service.js";
+import { ApifyService, QuotaScrapingEpuiseError } from "./apify.service.js";
 
 /**
  * Sourcing exécuté EN LIGNE dans l'API, sans worker BullMQ persistant. Choix
@@ -61,7 +61,21 @@ export class SourcingRunner {
         villes.length ? ` — ${villes.join(", ")}` : ""
       })`,
     );
-    const { runId, items } = await this.apify.runActor(actorId, input);
+    let runId: string;
+    let items: unknown[];
+    try {
+      ({ runId, items } = await this.apify.runActor(actorId, input));
+    } catch (err) {
+      if (err instanceof QuotaScrapingEpuiseError) {
+        // Journalisé en ERROR et non en WARN : sans quota, la promesse
+        // centrale du produit — une shortlist chaque matin — ne tient plus.
+        this.logger.error(
+          `Sourcing impossible pour le poste ${jobId} : ${err.message} ` +
+            `Vérifier le plan Apify ou changer d'actor.`,
+        );
+      }
+      throw err;
+    }
 
     const rawId = await withTenant(tenantId, async (tx) => {
       const [r] = await tx
