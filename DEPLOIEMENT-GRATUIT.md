@@ -59,7 +59,17 @@ qu'on l'utilise.
 2. ⚠️ **Root Directory** → **Edit** → `apps/web`
 
    L'erreur la plus fréquente. Sans ça, Vercel cherche un Next.js à la racine
-   du monorepo et le build échoue.
+   du monorepo et le build échoue avec `No Next.js version detected`.
+
+   **Colle la valeur, ne la tape pas.** Une espace avant `apps` suffit à faire
+   échouer tous les déploiements, avec un message trompeur :
+   `The specified Root Directory " apps/web" does not exist`.
+
+   Ce réglage est **indispensable dès que le dépôt Git est connecté** : un
+   déploiement déclenché par un push part de la racine du dépôt, alors qu'un
+   déploiement lancé en ligne de commande depuis `apps/web` envoie déjà le bon
+   dossier. Un projet créé au CLI peut donc fonctionner parfaitement en manuel
+   et échouer à chaque push tant que ce champ est vide.
 
 3. **Environment Variables**, une seule :
 
@@ -71,6 +81,19 @@ qu'on l'utilise.
    déploiement, un redémarrage ne suffit pas.
 
 4. **Deploy**, puis noter l'URL obtenue.
+
+### Déploiement automatique
+
+Vérifie que le dépôt est bien relié : **Settings → Git**. S'il ne l'est pas,
+`Connect Git Repository` → `Amineafilal/recruitai`.
+
+Une fois relié, chaque push sur `main` déclenche un déploiement en production,
+et chaque pull request obtient un aperçu sur une URL dédiée.
+
+Pour distinguer un déploiement automatique d'un déploiement manuel, regarde la
+colonne *Source* de l'onglet **Deployments** : un déploiement Git affiche le
+message du commit, un déploiement en ligne de commande affiche ton nom
+d'utilisateur.
 
 ---
 
