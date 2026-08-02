@@ -52,7 +52,7 @@ export class SourcingRunner {
       searchQuery: [criteres.titre, ...(criteres.competences ?? [])].join(" ").trim(),
       currentJobTitles: [criteres.titre],
       ...(villes.length > 0 ? { locations: villes } : {}),
-      profileScraperMode: process.env.APIFY_LINKEDIN_MODE ?? "Short",
+      profileScraperMode: this.apify.modeScraping(),
       maxItems: max,
     };
 

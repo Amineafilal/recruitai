@@ -21,6 +21,14 @@ interface ApifyRun {
  */
 const MOTIFS_QUOTA = /limit reached|run limit|quota|upgrade to a paid|exceeded/i;
 
+/**
+ * Modes acceptés par harvestapi/linkedin-profile-search, du moins au plus cher.
+ * Une valeur hors de cette liste ferait échouer chaque run — mieux vaut
+ * retomber sur le mode économique que de ne rien sourcer du tout.
+ */
+const MODES_VALIDES = ["Short", "Full", "Full + email search"] as const;
+export type ModeScraping = (typeof MODES_VALIDES)[number];
+
 /** Levée quand l'actor s'est arrêté faute de quota, pas faute de candidats. */
 export class QuotaScrapingEpuiseError extends Error {
   constructor(message: string) {
@@ -47,6 +55,23 @@ export class ApifyService {
 
   actorId(source = "linkedin"): string | null {
     return process.env[`APIFY_${source.toUpperCase()}_ACTOR_ID`] ?? null;
+  }
+
+  /**
+   * Mode de scraping configuré, validé. « Short » par défaut : c'est le moins
+   * cher, et il ne faut jamais qu'une faute de frappe fasse basculer sur un
+   * mode facturé au profil à l'insu de l'exploitant.
+   */
+  modeScraping(): ModeScraping {
+    const brut = (process.env.APIFY_LINKEDIN_MODE ?? "").trim();
+    if ((MODES_VALIDES as readonly string[]).includes(brut)) return brut as ModeScraping;
+    if (brut) {
+      this.logger.warn(
+        `APIFY_LINKEDIN_MODE="${brut}" invalide — valeurs acceptées : ` +
+          `${MODES_VALIDES.map((m) => `"${m}"`).join(", ")}. Repli sur "Short".`,
+      );
+    }
+    return "Short";
   }
 
   async runActor<T = unknown>(
