@@ -299,6 +299,11 @@ export interface JobView {
   id: string;
   statut: string;
   createdAt: string;
+  /** Issue du dernier sourcing. Null si aucune recherche n'a encore été lancée. */
+  sourcingStatut?: "en_cours" | "termine" | "echec" | null;
+  sourcingAt?: string | null;
+  sourcingMessage?: string | null;
+  sourcingCandidats?: number | null;
   criteres: {
     titre: string;
     competences: string[];

@@ -45,6 +45,16 @@ export const pipelineStageEnum = pgEnum("pipeline_stage", [
   "embauche",
   "rejete",
 ]);
+/**
+ * Issue du dernier sourcing lancé sur un poste.
+ *
+ * `termine` avec zéro candidat et `echec` sont deux situations opposées que
+ * l'interface confondait : elle affichait « recherche en cours » dans les deux
+ * cas, laissant le recruteur attendre indéfiniment un résultat qui n'arriverait
+ * jamais.
+ */
+export const sourcingStatutEnum = pgEnum("sourcing_statut", ["en_cours", "termine", "echec"]);
+
 export const signalTypeEnum = pgEnum("signal_type", ["changement_poste", "nouveau_diplome", "activite"]);
 export const consentTypeEnum = pgEnum("consent_type", ["contact_rgpd", "opt_out"]);
 export const outreachStatusEnum = pgEnum("outreach_status", ["envoye", "echec", "bloque_opt_out"]);
@@ -124,6 +134,16 @@ export const jobs = pgTable("jobs", {
   tenantId: uuid("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
   criteres: jsonb("criteres").notNull(),
   statut: jobStatusEnum("statut").notNull().default("ouvert"),
+
+  // --- Suivi du dernier sourcing --------------------------------------------
+  // Null tant qu'aucune recherche n'a été lancée sur ce poste.
+  sourcingStatut: sourcingStatutEnum("sourcing_statut"),
+  sourcingAt: timestamp("sourcing_at", { withTimezone: true }),
+  /** Raison lisible en cas d'échec, affichée telle quelle au recruteur. */
+  sourcingMessage: text("sourcing_message"),
+  /** Nombre de candidats rapportés par la dernière recherche aboutie. */
+  sourcingCandidats: integer("sourcing_candidats"),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

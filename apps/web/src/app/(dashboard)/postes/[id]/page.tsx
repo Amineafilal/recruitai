@@ -8,6 +8,7 @@ import { setValidation } from "../actions";
 import { JobActions } from "./JobActions";
 import { PipelineBoard } from "./PipelineBoard";
 import { VueToggle } from "./VueToggle";
+import { EtatSourcing } from "@/components/EtatSourcing";
 
 export const dynamic = "force-dynamic";
 
@@ -73,13 +74,11 @@ export default async function ShortlistPage({ params }: { params: { id: string }
       </div>
 
       {candidats.length === 0 ? (
-        <div className="card grid place-items-center px-6 py-16 text-center">
-          <div className="mb-3 h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-          <p className="font-display text-lg text-ink">L'agent IA source vos candidats…</p>
-          <p className="mt-1 text-[14px] text-ink-soft">
-            Le scraping et le scoring prennent environ une minute. Rafraîchissez la page.
-          </p>
-        </div>
+        <EtatSourcing
+          statut={job.sourcingStatut}
+          message={job.sourcingMessage}
+          quand={job.sourcingAt}
+        />
       ) : (
         <VueToggle
           pipeline={<PipelineBoard candidats={candidats} jobId={params.id} />}

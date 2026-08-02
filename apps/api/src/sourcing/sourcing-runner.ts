@@ -21,6 +21,35 @@ export class SourcingRunner {
 
   constructor(private readonly apify: ApifyService) {}
 
+  /**
+   * Consigne l'issue du dernier sourcing sur le poste.
+   *
+   * Sans cette trace, l'interface ne peut pas distinguer « recherche en cours »
+   * de « terminée sans résultat » ni de « échec » — elle affichait donc un
+   * chargement perpétuel dans les trois cas.
+   */
+  private async marquer(
+    tenantId: string,
+    jobId: string,
+    statut: "en_cours" | "termine" | "echec",
+    details: { message?: string | null; candidats?: number | null } = {},
+  ): Promise<void> {
+    await withTenant(tenantId, (tx) =>
+      tx
+        .update(schema.jobs)
+        .set({
+          sourcingStatut: statut,
+          sourcingAt: new Date(),
+          sourcingMessage: details.message ?? null,
+          sourcingCandidats: details.candidats ?? null,
+        })
+        .where(eq(schema.jobs.id, jobId)),
+    ).catch((err) => {
+      // Le suivi ne doit jamais faire échouer le sourcing lui-même.
+      this.logger.warn(`Suivi du sourcing non enregistré (poste ${jobId}) : ${String(err)}`);
+    });
+  }
+
   /** Lance le sourcing d'un poste en tâche de fond (fire-and-forget). */
   runInBackground(tenantId: string, jobId: string): void {
     this.sourcePoste(tenantId, jobId).catch((err) => {
@@ -61,6 +90,7 @@ export class SourcingRunner {
         villes.length ? ` — ${villes.join(", ")}` : ""
       })`,
     );
+    await this.marquer(tenantId, jobId, "en_cours");
     let runId: string;
     let items: unknown[];
     try {
@@ -73,6 +103,15 @@ export class SourcingRunner {
           `Sourcing impossible pour le poste ${jobId} : ${err.message} ` +
             `Vérifier le plan Apify ou changer d'actor.`,
         );
+        await this.marquer(tenantId, jobId, "echec", {
+          message:
+            "Le quota de scraping du compte est épuisé : aucune recherche ne peut aboutir. " +
+            "Contactez l'administrateur de votre espace.",
+        });
+      } else {
+        await this.marquer(tenantId, jobId, "echec", {
+          message: "La recherche a échoué pour une raison technique. Réessayez dans un moment.",
+        });
       }
       throw err;
     }
@@ -149,6 +188,8 @@ export class SourcingRunner {
         .set({ statut: "normalized" })
         .where(eq(schema.rawScrapeResults.id, rawId));
     });
+
+    await this.marquer(tenantId, jobId, "termine", { candidats: scored.length });
 
     this.logger.log(
       `Sourcing auto terminé pour ${jobId}: ${scored.length - echecs} candidat(s) scoré(s)` +
