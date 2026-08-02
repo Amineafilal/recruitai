@@ -3,7 +3,7 @@ import { and, eq, lt } from "drizzle-orm";
 import { getAdminDb, withTenant, schema } from "@recruitai/db";
 import { scoreCandidate } from "@recruitai/ai";
 import { villesDuPoste, type JobCriteria } from "@recruitai/types";
-import { ApifyService } from "./apify.service.js";
+import { ApifyService, QuotaScrapingEpuiseError } from "./apify.service.js";
 
 /**
  * Sourcing exécuté EN LIGNE dans l'API, sans worker BullMQ persistant. Choix
@@ -52,7 +52,7 @@ export class SourcingRunner {
       searchQuery: [criteres.titre, ...(criteres.competences ?? [])].join(" ").trim(),
       currentJobTitles: [criteres.titre],
       ...(villes.length > 0 ? { locations: villes } : {}),
-      profileScraperMode: process.env.APIFY_LINKEDIN_MODE ?? "Short",
+      profileScraperMode: this.apify.modeScraping(),
       maxItems: max,
     };
 
@@ -61,7 +61,21 @@ export class SourcingRunner {
         villes.length ? ` — ${villes.join(", ")}` : ""
       })`,
     );
-    const { runId, items } = await this.apify.runActor(actorId, input);
+    let runId: string;
+    let items: unknown[];
+    try {
+      ({ runId, items } = await this.apify.runActor(actorId, input));
+    } catch (err) {
+      if (err instanceof QuotaScrapingEpuiseError) {
+        // Journalisé en ERROR et non en WARN : sans quota, la promesse
+        // centrale du produit — une shortlist chaque matin — ne tient plus.
+        this.logger.error(
+          `Sourcing impossible pour le poste ${jobId} : ${err.message} ` +
+            `Vérifier le plan Apify ou changer d'actor.`,
+        );
+      }
+      throw err;
+    }
 
     const rawId = await withTenant(tenantId, async (tx) => {
       const [r] = await tx
@@ -83,18 +97,20 @@ export class SourcingRunner {
       statutScoring: "ok" | "echec";
       scoringErreur: string | null;
       scoringJustification: string | null;
+      scoringCriteres: unknown;
     }[] = [];
 
     let echecs = 0;
     for (const profil of items) {
       try {
-        const { score, justification } = await scoreCandidate({ criteres, profil });
+        const { score, justification, criteres: detail } = await scoreCandidate({ criteres, profil });
         scored.push({
           profil,
           score,
           statutScoring: "ok",
           scoringErreur: null,
           scoringJustification: justification,
+          scoringCriteres: detail,
         });
       } catch (err) {
         echecs += 1;
@@ -105,6 +121,7 @@ export class SourcingRunner {
           statutScoring: "echec",
           scoringErreur: resumeErreurScoring(err),
           scoringJustification: null,
+          scoringCriteres: null,
         });
       }
     }
@@ -120,6 +137,7 @@ export class SourcingRunner {
             statutScoring: c.statutScoring,
             scoringErreur: c.scoringErreur,
             scoringJustification: c.scoringJustification,
+            scoringCriteres: c.scoringCriteres,
             scoringTentatives: 1,
             profil: c.profil,
             statutValidation: "a_valider" as const,
@@ -177,7 +195,10 @@ export class SourcingRunner {
       }
 
       try {
-        const { score, justification } = await scoreCandidate({ criteres, profil: candidat.profil });
+        const { score, justification, criteres: detail } = await scoreCandidate({
+          criteres,
+          profil: candidat.profil,
+        });
         await withTenant(tenantId, async (tx) => {
           await tx
             .update(schema.sourcingCandidates)
@@ -186,6 +207,7 @@ export class SourcingRunner {
               statutScoring: "ok",
               scoringErreur: null,
               scoringJustification: justification,
+              scoringCriteres: detail,
               scoringTentatives: candidat.scoringTentatives + 1,
             })
             .where(eq(schema.sourcingCandidates.id, candidat.id));

@@ -7,6 +7,34 @@ interface ApifyRun {
   id: string;
   status: string;
   defaultDatasetId: string;
+  /**
+   * Message du fournisseur. Décisif : un actor qui a épuisé son quota gratuit
+   * renvoie SUCCEEDED avec zéro résultat, indiscernable d'une recherche sans
+   * candidat. Seul ce champ dit la différence.
+   */
+  statusMessage?: string | null;
+}
+
+/**
+ * Motifs signalant un arrêt pour cause de quota et non de résultat vide.
+ * Le message exact dépend de l'auteur de l'actor, d'où la détection large.
+ */
+const MOTIFS_QUOTA = /limit reached|run limit|quota|upgrade to a paid|exceeded/i;
+
+/**
+ * Modes acceptés par harvestapi/linkedin-profile-search, du moins au plus cher.
+ * Une valeur hors de cette liste ferait échouer chaque run — mieux vaut
+ * retomber sur le mode économique que de ne rien sourcer du tout.
+ */
+const MODES_VALIDES = ["Short", "Full", "Full + email search"] as const;
+export type ModeScraping = (typeof MODES_VALIDES)[number];
+
+/** Levée quand l'actor s'est arrêté faute de quota, pas faute de candidats. */
+export class QuotaScrapingEpuiseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "QuotaScrapingEpuiseError";
+  }
 }
 
 /**
@@ -27,6 +55,23 @@ export class ApifyService {
 
   actorId(source = "linkedin"): string | null {
     return process.env[`APIFY_${source.toUpperCase()}_ACTOR_ID`] ?? null;
+  }
+
+  /**
+   * Mode de scraping configuré, validé. « Short » par défaut : c'est le moins
+   * cher, et il ne faut jamais qu'une faute de frappe fasse basculer sur un
+   * mode facturé au profil à l'insu de l'exploitant.
+   */
+  modeScraping(): ModeScraping {
+    const brut = (process.env.APIFY_LINKEDIN_MODE ?? "").trim();
+    if ((MODES_VALIDES as readonly string[]).includes(brut)) return brut as ModeScraping;
+    if (brut) {
+      this.logger.warn(
+        `APIFY_LINKEDIN_MODE="${brut}" invalide — valeurs acceptées : ` +
+          `${MODES_VALIDES.map((m) => `"${m}"`).join(", ")}. Repli sur "Short".`,
+      );
+    }
+    return "Short";
   }
 
   async runActor<T = unknown>(
@@ -59,7 +104,24 @@ export class ApifyService {
       `${APIFY_API_BASE}/datasets/${cur.defaultDatasetId}/items?token=${token}&format=json`,
     );
     const items = (await ds.json()) as T[];
-    this.logger.log(`Run Apify ${run.id} terminé : ${items.length} élément(s).`);
+
+    // Un run vide ET porteur d'un message de quota n'est PAS une recherche
+    // infructueuse : c'est une panne de configuration. La confondre avec un
+    // résultat vide laisse le recruteur devant un écran « recherche en
+    // cours… » qui ne se résoudra jamais.
+    const message = cur.statusMessage ?? "";
+    if (items.length === 0 && MOTIFS_QUOTA.test(message)) {
+      throw new QuotaScrapingEpuiseError(
+        `L'actor Apify a refusé de s'exécuter : « ${message} ». ` +
+          `Le quota du compte de scraping est épuisé — aucun candidat ne sera trouvé ` +
+          `tant qu'il n'est pas rétabli.`,
+      );
+    }
+
+    this.logger.log(
+      `Run Apify ${run.id} terminé : ${items.length} élément(s).` +
+        (message ? ` Message : ${message}` : ""),
+    );
     return { runId: run.id, items };
   }
 }

@@ -124,29 +124,65 @@ export function experiencesNormalisees(profil: CandidateProfil): ExperienceNorma
   });
 }
 
+const FORMAT_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+/** Au moins 8 chiffres, éventuellement précédés d'un +. */
+const FORMAT_TELEPHONE = /^\+?[\d][\d\s.\-()]{7,}$/;
+
+/**
+ * Cherche une valeur exploitable dans un objet dont on ne connaît pas le nom
+ * exact des champs.
+ *
+ * Le mode « Full + email search » de l'actor ajoute un email au profil, mais
+ * sa documentation ne précise pas sous quelle clé, et le quota du compte ne
+ * permet pas de l'observer. Plutôt que de parier sur un nom, on parcourt le
+ * profil sur une profondeur limitée en retenant la première valeur qui a la
+ * FORME attendue — un email ressemble à un email, quel que soit son libellé.
+ */
+function chercherParForme(
+  source: unknown,
+  motifCle: RegExp,
+  formatValeur: RegExp,
+  profondeur = 3,
+): string | null {
+  if (profondeur < 0 || source === null || typeof source !== "object") return null;
+
+  for (const [cle, valeur] of Object.entries(source as Record<string, unknown>)) {
+    if (typeof valeur === "string") {
+      const v = valeur.trim();
+      // La clé DOIT correspondre : sans ce filtre, un email trouvé dans une
+      // description de poste serait pris pour celui du candidat.
+      if (motifCle.test(cle) && formatValeur.test(v)) return v;
+    } else if (Array.isArray(valeur)) {
+      for (const el of valeur) {
+        if (typeof el === "string" && motifCle.test(cle) && formatValeur.test(el.trim())) {
+          return el.trim();
+        }
+        const trouve = chercherParForme(el, motifCle, formatValeur, profondeur - 1);
+        if (trouve) return trouve;
+      }
+    } else if (valeur && typeof valeur === "object") {
+      const trouve = chercherParForme(valeur, motifCle, formatValeur, profondeur - 1);
+      if (trouve) return trouve;
+    }
+  }
+  return null;
+}
+
 /**
  * Coordonnées exploitables d'un candidat.
  *
- * Le scraping LinkedIn ne renvoie jamais d'email ni de téléphone : ces champs
- * ne sont renseignés que pour les profils venus de la CVthèque de l'agence
- * (import CSV), où le candidat les a fournis lui-même. On les cherche donc à
- * plusieurs emplacements selon l'origine du profil.
+ * Deux origines possibles : la CVthèque de l'agence (le candidat les a
+ * fournies lui-même à l'import CSV), ou la recherche d'email de l'actor en
+ * mode « Full + email search ». Le mode « Short », le moins cher, n'en
+ * renvoie aucune.
  */
 export function coordonneesCandidat(profil: CandidateProfil): {
   email: string | null;
   telephone: string | null;
 } {
-  const p = profil as CandidateProfil & Record<string, unknown>;
-  const chaine = (v: unknown): string | null => {
-    const s = typeof v === "string" ? v.trim() : "";
-    return s.length > 0 ? s : null;
-  };
-  const contactImporte = (p.contact ?? {}) as Record<string, unknown>;
-
   return {
-    email: chaine(p.email) ?? chaine(p.emailAddress) ?? chaine(contactImporte.email),
-    telephone:
-      chaine(p.phone) ?? chaine(p.phoneNumber) ?? chaine(p.mobile) ?? chaine(contactImporte.telephone),
+    email: chercherParForme(profil, /e?mail/i, FORMAT_EMAIL),
+    telephone: chercherParForme(profil, /phone|tel|mobile|gsm/i, FORMAT_TELEPHONE),
   };
 }
 
@@ -209,6 +245,31 @@ export function asText(v: HarvestText): string {
   return v.linkedinText ?? v.text ?? "";
 }
 
+/**
+ * Détail du score par critère. Miroir de CriteresEvalues de @recruitai/ai :
+ * dupliqué ici pour que les composants client n'embarquent pas le paquet
+ * serveur. Toute modification doit être répercutée des deux côtés.
+ */
+export interface CritereScoreView {
+  note: number | null;
+  commentaire: string;
+}
+
+export interface CriteresScoreView {
+  competences: CritereScoreView;
+  experience: CritereScoreView;
+  seniorite: CritereScoreView;
+  localisation: CritereScoreView;
+}
+
+/** Pondération affichée au recruteur — identique à CRITERES_SCORING. */
+export const PONDERATION_SCORE = [
+  { cle: "competences" as const, libelle: "Compétences demandées", poids: 0.4 },
+  { cle: "experience" as const, libelle: "Expérience pertinente", poids: 0.25 },
+  { cle: "seniorite" as const, libelle: "Niveau de séniorité", poids: 0.2 },
+  { cle: "localisation" as const, libelle: "Localisation", poids: 0.15 },
+];
+
 export interface SourcingCandidateView {
   id: string;
   source: string;
@@ -217,6 +278,7 @@ export interface SourcingCandidateView {
   statutScoring?: "ok" | "echec";
   scoringErreur?: string | null;
   scoringJustification?: string | null;
+  scoringCriteres?: CriteresScoreView | null;
   scoringTentatives?: number;
   /** Étape du pipeline. Optionnel : les données de démo ne la portent pas. */
   etape?:

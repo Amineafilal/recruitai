@@ -153,8 +153,14 @@ export const sourcingCandidates = pgTable("sourcing_candidates", {
   scoringErreur: text("scoring_erreur"),
   /** Nombre de tentatives, pour ne pas boucler indéfiniment sur un profil. */
   scoringTentatives: integer("scoring_tentatives").notNull().default(0),
-  /** Justification rendue par l'IA — sert à expliquer le score au recruteur. */
+  /** Synthèse rendue par l'IA — une à deux phrases affichées au recruteur. */
   scoringJustification: text("scoring_justification"),
+  /**
+   * Détail par critère : { competences: {note, commentaire}, ... }.
+   * C'est ce qui rend la note explicable — sans lui, le recruteur n'a qu'un
+   * chiffre brut qu'il ne peut ni vérifier ni contester.
+   */
+  scoringCriteres: jsonb("scoring_criteres"),
   /** Étape courante du pipeline — source de vérité depuis la migration 0006. */
   etape: pipelineStageEnum("etape").notNull().default("source"),
   /**

@@ -1,0 +1,1 @@
+ALTER TABLE "sourcing_candidates" ADD COLUMN "scoring_criteres" jsonb;
