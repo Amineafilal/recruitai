@@ -22,7 +22,16 @@ export const validationStatusEnum = pgEnum("validation_status", ["a_valider", "v
  * (`validation_status`) : un profil peut être « scoring impossible » tout en
  * restant « à valider » par le recruteur.
  */
-export const scoringStatusEnum = pgEnum("scoring_status", ["ok", "echec"]);
+/**
+ * Issue de la notation d'un candidat. Trois états bien distincts :
+ *  - `ok`             : noté.
+ *  - `echec`          : la notation n'a pas abouti (panne, quota, timeout).
+ *                       Réessayer a du sens, c'est ce que fait le cron.
+ *  - `non_evaluable`  : la notation a abouti, mais le profil scrapé ne
+ *                       contenait rien à noter. Réessayer ne changerait rien
+ *                       et brûlerait un appel à l'IA à chaque nuit.
+ */
+export const scoringStatusEnum = pgEnum("scoring_status", ["ok", "echec", "non_evaluable"]);
 /**
  * Étapes du pipeline de recrutement. Remplace `validation_status`, qui ne
  * distinguait que « à valider / validé / rejeté » et ne permettait pas de

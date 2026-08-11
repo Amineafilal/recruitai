@@ -27,9 +27,16 @@ export function ValidationBadge({ statut }: { statut: string }) {
 }
 
 /**
- * Signale un profil que l'IA n'a pas pu noter. Volontairement distinct du
- * badge de validation : c'est un incident technique, pas une décision du
- * recruteur — le candidat reste « à valider ».
+ * Signale un profil sans note, et dit LAQUELLE des deux raisons s'applique.
+ *
+ * « Scoring impossible » est un incident technique : réessayer peut aboutir.
+ * « Profil trop incomplet » est définitif tant que la source ne renvoie pas
+ * davantage — le recruteur doit savoir qu'il n'a pas à attendre une note.
+ * Les confondre menait à afficher 0/100, c'est-à-dire à faire passer pour un
+ * mauvais candidat quelqu'un qui n'avait simplement pas été évalué.
+ *
+ * Dans les deux cas, distinct du badge de validation : ce n'est pas une
+ * décision du recruteur, le candidat reste « à valider ».
  */
 export function ScoringBadge({
   statutScoring,
@@ -38,6 +45,16 @@ export function ScoringBadge({
   statutScoring?: string;
   erreur?: string | null;
 }) {
+  if (statutScoring === "non_evaluable") {
+    return (
+      <span
+        className="rounded-md bg-paper-2 px-2 py-0.5 text-[11px] font-semibold text-ink-faint"
+        title={erreur ?? "La source n'a renvoyé aucune donnée exploitable pour ce profil."}
+      >
+        Profil trop incomplet
+      </span>
+    );
+  }
   if (statutScoring !== "echec") return null;
   return (
     <span

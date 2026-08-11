@@ -91,7 +91,9 @@ export default async function CandidatPage({
           <div className="flex shrink-0 flex-col items-center gap-3">
             <ScoreRing score={candidat.score} size={68} />
             <span className="text-[12px] text-ink-faint">
-              {candidat.statutScoring === "echec" ? "non noté" : "score IA"}
+              {candidat.statutScoring === "echec" || candidat.statutScoring === "non_evaluable"
+                ? "non noté"
+                : "score IA"}
             </span>
           </div>
         </div>
@@ -116,7 +118,23 @@ export default async function CandidatPage({
       </div>
 
       {/* Explication du score : pourquoi cette note, ou pourquoi il n'y en a pas. */}
-      {candidat.statutScoring === "echec" ? (
+      {candidat.statutScoring === "non_evaluable" ? (
+        <div className="card mb-6 border-l-4 border-l-line p-5">
+          <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wider text-ink-faint">
+            Profil trop incomplet pour être noté
+          </h2>
+          <p className="text-[14px] text-ink-soft">
+            {candidat.scoringErreur ??
+              "La source n'a renvoyé aucune donnée exploitable pour ce profil."}
+          </p>
+          {/* Dire explicitement qu'il n'y aura pas de note plus tard : sans ça,
+              le recruteur attend une réévaluation qui ne viendra jamais. */}
+          <p className="mt-2 text-[13px] text-ink-faint">
+            Aucune réévaluation n'est prévue : elle donnerait le même résultat tant que la
+            source ne fournit pas davantage. Ouvrez le profil LinkedIn pour juger vous-même.
+          </p>
+        </div>
+      ) : candidat.statutScoring === "echec" ? (
         <div className="card mb-6 border-l-4 border-l-danger p-5">
           <h2 className="mb-1 text-[13px] font-semibold uppercase tracking-wider text-danger">
             Scoring impossible

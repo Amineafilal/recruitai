@@ -3,7 +3,23 @@ import { and, eq, lt } from "drizzle-orm";
 import { getAdminDb, withTenant, schema } from "@recruitai/db";
 import { scoreCandidate } from "@recruitai/ai";
 import { villesDuPoste, type JobCriteria } from "@recruitai/types";
-import { ApifyService, QuotaScrapingEpuiseError } from "./apify.service.js";
+import {
+  ApifyService,
+  QuotaScrapingEpuiseError,
+  ScrapingIndisponibleError,
+} from "./apify.service.js";
+import { normaliserProfil } from "./normaliser-profil.js";
+
+/**
+ * Écart minimal entre deux recherches, quelle que soit leur provenance.
+ *
+ * La source interroge les résultats publics d'un moteur de recherche : quatre
+ * recherches en trois minutes suffisent à se faire mettre de côté, et les runs
+ * suivants expirent alors sans extraire une seule ligne. Constaté en
+ * production le 7 août : cinq recherches abouties, puis quatre TIMED-OUT
+ * d'affilée dès que deux boucles de sourcing se sont chevauchées.
+ */
+const ECART_MINIMAL_ENTRE_RECHERCHES_MS = 30_000;
 
 /**
  * Sourcing exécuté EN LIGNE dans l'API, sans worker BullMQ persistant. Choix
@@ -19,7 +35,39 @@ import { ApifyService, QuotaScrapingEpuiseError } from "./apify.service.js";
 export class SourcingRunner {
   private readonly logger = new Logger(SourcingRunner.name);
 
+  /**
+   * File d'attente unique de toutes les recherches du processus.
+   *
+   * Le cron sérialise déjà ses propres postes, mais rien ne l'empêchait de se
+   * chevaucher avec un sourcing déclenché à la création d'un poste ou à la
+   * main. Les recherches partaient alors par deux, la source coupait, et les
+   * deux postes échouaient — dont celui que le recruteur venait de créer.
+   */
+  private static file: Promise<void> = Promise.resolve();
+  private static finDeLaDerniereRecherche = 0;
+
   constructor(private readonly apify: ApifyService) {}
+
+  /** Exécute `travail` seul, et jamais moins de 30 s après la recherche précédente. */
+  private static enfiler<T>(travail: () => Promise<T>): Promise<T> {
+    const resultat = SourcingRunner.file.then(async () => {
+      const depuis = Date.now() - SourcingRunner.finDeLaDerniereRecherche;
+      const reste = ECART_MINIMAL_ENTRE_RECHERCHES_MS - depuis;
+      if (reste > 0) await new Promise((r) => setTimeout(r, reste));
+      try {
+        return await travail();
+      } finally {
+        SourcingRunner.finDeLaDerniereRecherche = Date.now();
+      }
+    });
+    // La file ne doit pas se rompre sur un échec : le poste suivant a encore
+    // besoin d'être traité.
+    SourcingRunner.file = resultat.then(
+      () => undefined,
+      () => undefined,
+    );
+    return resultat;
+  }
 
   /**
    * Consigne l'issue du dernier sourcing sur le poste.
@@ -94,9 +142,18 @@ export class SourcingRunner {
     let runId: string;
     let items: unknown[];
     try {
-      ({ runId, items } = await this.apify.runActor(actorId, input));
+      ({ runId, items } = await SourcingRunner.enfiler(() => this.apify.runActor(actorId, input)));
     } catch (err) {
-      if (err instanceof QuotaScrapingEpuiseError) {
+      if (err instanceof ScrapingIndisponibleError) {
+        this.logger.error(
+          `Sourcing du poste ${jobId} abandonné après plusieurs tentatives : ${err.message}`,
+        );
+        await this.marquer(tenantId, jobId, "echec", {
+          message:
+            "La source de profils n'a pas répondu, malgré plusieurs tentatives. " +
+            "C'est passager : relancez la recherche dans quelques minutes.",
+        });
+      } else if (err instanceof QuotaScrapingEpuiseError) {
         // Journalisé en ERROR et non en WARN : sans quota, la promesse
         // centrale du produit — une shortlist chaque matin — ne tient plus.
         this.logger.error(
@@ -133,21 +190,32 @@ export class SourcingRunner {
     const scored: {
       profil: unknown;
       score: number | null;
-      statutScoring: "ok" | "echec";
+      statutScoring: "ok" | "echec" | "non_evaluable";
       scoringErreur: string | null;
       scoringJustification: string | null;
       scoringCriteres: unknown;
     }[] = [];
 
+    // Normalisation immédiate : le scoring et la fiche candidat ne doivent
+    // pas connaître le vocabulaire de l'actor qui a produit les données.
+    const profils = items.map(normaliserProfil);
+
     let echecs = 0;
-    for (const profil of items) {
+    let nonEvaluables = 0;
+    for (const profil of profils) {
       try {
         const { score, justification, criteres: detail } = await scoreCandidate({ criteres, profil });
+        // score null : l'IA a répondu, mais aucun critère n'était évaluable.
+        // On le dit, plutôt que de le classer dernier avec un 0 mensonger.
+        if (score === null) nonEvaluables += 1;
         scored.push({
           profil,
           score,
-          statutScoring: "ok",
-          scoringErreur: null,
+          statutScoring: score === null ? "non_evaluable" : "ok",
+          scoringErreur:
+            score === null
+              ? "Profil trop incomplet pour être noté : la source n'a renvoyé aucune donnée exploitable."
+              : null,
           scoringJustification: justification,
           scoringCriteres: detail,
         });
@@ -192,8 +260,10 @@ export class SourcingRunner {
     await this.marquer(tenantId, jobId, "termine", { candidats: scored.length });
 
     this.logger.log(
-      `Sourcing auto terminé pour ${jobId}: ${scored.length - echecs} candidat(s) scoré(s)` +
-        (echecs > 0 ? `, ${echecs} en échec de scoring (conservés).` : "."),
+      `Sourcing auto terminé pour ${jobId}: ${scored.length - echecs - nonEvaluables} candidat(s) scoré(s)` +
+        (echecs > 0 ? `, ${echecs} en échec de scoring (conservés)` : "") +
+        (nonEvaluables > 0 ? `, ${nonEvaluables} profil(s) trop incomplet(s) pour être noté(s)` : "") +
+        ".",
     );
   }
 
@@ -245,8 +315,15 @@ export class SourcingRunner {
             .update(schema.sourcingCandidates)
             .set({
               score,
-              statutScoring: "ok",
-              scoringErreur: null,
+              // Un réessai peut aboutir sans pour autant produire une note :
+              // le profil lui-même n'a rien à noter. L'enregistrer « ok »
+              // avec un score vide le remettrait dans la file des échecs à
+              // chaque nuit.
+              statutScoring: score === null ? "non_evaluable" : "ok",
+              scoringErreur:
+                score === null
+                  ? "Profil trop incomplet pour être noté : la source n'a renvoyé aucune donnée exploitable."
+                  : null,
               scoringJustification: justification,
               scoringCriteres: detail,
               scoringTentatives: candidat.scoringTentatives + 1,
@@ -260,15 +337,19 @@ export class SourcingRunner {
             candidateId: candidat.id,
             type: "score",
             resume:
-              candidat.score === null
-                ? `Score attribué après nouvelle tentative : ${score}/100`
-                : `Score recalculé : ${candidat.score} → ${score}/100`,
+              score === null
+                ? "Nouvelle tentative : profil trop incomplet pour être noté."
+                : candidat.score === null
+                  ? `Score attribué après nouvelle tentative : ${score}/100`
+                  : `Score recalculé : ${candidat.score} → ${score}/100`,
             details: justification,
             meta: { avant: candidat.score, apres: score },
             auteurEmail: "agent IA",
           });
         });
-        reussis += 1;
+        // Un profil déclaré non notable est résolu, pas récupéré : le compter
+        // comme une réussite gonflerait artificiellement le rapport du cron.
+        if (score !== null) reussis += 1;
       } catch (err) {
         await withTenant(tenantId, (tx) =>
           tx
