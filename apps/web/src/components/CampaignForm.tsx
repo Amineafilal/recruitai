@@ -2,13 +2,8 @@
 
 import { useRef, useState } from "react";
 import { TEMPLATE_VARIABLES } from "@/lib/template-vars";
-
-const TRIGGERS: { value: string; label: string }[] = [
-  { value: "manuel", label: "Manuel — tous les candidats chauds" },
-  { value: "changement_poste", label: "Changement de poste détecté" },
-  { value: "nouveau_diplome", label: "Nouveau diplôme" },
-  { value: "activite", label: "Activité LinkedIn récente" },
-];
+import { TRIGGERS } from "@/lib/declencheurs";
+import { Modal } from "./Modal";
 
 export interface CampaignDefaults {
   nom: string;
@@ -64,19 +59,17 @@ export function CampaignForm({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/60 p-6 backdrop-blur-sm animate-fade-in"
-      onClick={() => !pending && onClose()}
+    // Passe par la modale partagée plutôt que par un voile maison : celui-ci
+    // était piégé par le `transform` de la carte appelante et se réduisait à
+    // une bande de 108 px, avec un formulaire de 714 px débordant hors écran.
+    <Modal
+      titre={edition ? "Modifier la campagne" : "Nouvelle campagne de relance"}
+      description="Le message part automatiquement aux candidats chauds correspondant au déclencheur."
+      onClose={onClose}
+      bloque={pending}
+      largeur="w-[560px]"
     >
-      <div className="card my-auto w-[560px] max-w-[94vw] p-6 animate-rise-in" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-1 font-display text-xl font-bold">
-          {edition ? "Modifier la campagne" : "Nouvelle campagne de relance"}
-        </h2>
-        <p className="mb-5 text-[13px] text-ink-soft">
-          Le message part automatiquement aux candidats chauds correspondant au déclencheur.
-        </p>
-
-        <form action={action} className="flex flex-col gap-4">
+      <form action={action} className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-[13px] text-ink-soft">Nom de la campagne</span>
             <input
@@ -175,8 +168,7 @@ export function CampaignForm({
               {pending ? "Enregistrement…" : edition ? "Enregistrer" : "Créer la campagne"}
             </button>
           </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 }
