@@ -275,7 +275,7 @@ export interface SourcingCandidateView {
   source: string;
   /** Null quand le scoring a échoué — distinct d'un score de 0. */
   score: number | null;
-  statutScoring?: "ok" | "echec";
+  statutScoring?: "ok" | "echec" | "non_evaluable";
   scoringErreur?: string | null;
   scoringJustification?: string | null;
   scoringCriteres?: CriteresScoreView | null;
@@ -311,6 +311,8 @@ export interface JobView {
     localisation?: string;
     localisations?: string[];
     seniorite?: string;
+    /** Absent sur les postes créés avant l'ouverture aux autres secteurs. */
+    secteur?: string;
   };
   // Optionnel : nombre de candidats en shortlist (agrégé côté liste).
   shortlistCount?: number;

@@ -4,21 +4,34 @@ import { useState, type KeyboardEvent } from "react";
 
 export const MAX_VILLES = 8;
 
-/** Bassins d'emploi les plus courants chez les agences France / Belgique / Suisse. */
+/**
+ * Bassins d'emploi du marché visé : Maroc et Europe francophone.
+ *
+ * L'ordre compte — seules les premières suggestions sont affichées. La liste
+ * précédente listait six villes françaises avant la première ville marocaine,
+ * qui n'apparaissait donc jamais. On alterne désormais les deux marchés.
+ */
 const SUGGESTIONS = [
+  "Casablanca",
   "Paris",
+  "Rabat",
   "Lyon",
+  "Marrakech",
+  "Bruxelles",
+  "Tanger",
   "Marseille",
+  "Genève",
   "Toulouse",
+  "Agadir",
   "Bordeaux",
   "Lille",
   "Nantes",
-  "Bruxelles",
-  "Genève",
   "Lausanne",
-  "Casablanca",
   "Remote",
 ];
+
+/** Nombre de suggestions affichées : au-delà, la ligne passe sur trois rangs. */
+const SUGGESTIONS_AFFICHEES = 8;
 
 /**
  * Saisie de plusieurs villes sous forme de badges. Les valeurs partent dans le
@@ -60,7 +73,7 @@ export function VillesInput({ nom = "localisations", initial = [] }: { nom?: str
 
   const restantes = SUGGESTIONS.filter(
     (s) => !villes.some((v) => v.toLowerCase() === s.toLowerCase()),
-  ).slice(0, 6);
+  ).slice(0, SUGGESTIONS_AFFICHEES);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -95,7 +108,7 @@ export function VillesInput({ nom = "localisations", initial = [] }: { nom?: str
           onKeyDown={onKeyDown}
           onBlur={() => ajouter(saisie)}
           disabled={plein}
-          placeholder={plein ? "Maximum atteint" : villes.length ? "Ajouter…" : "Lyon, Paris, Remote…"}
+          placeholder={plein ? "Maximum atteint" : villes.length ? "Ajouter…" : "Casablanca, Paris, Remote…"}
           className="min-w-[110px] flex-1 bg-transparent px-1 py-0.5 text-[14px] text-ink outline-none placeholder:text-ink-faint disabled:cursor-not-allowed"
         />
       </div>
