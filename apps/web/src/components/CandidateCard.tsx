@@ -18,14 +18,23 @@ export function CandidateCard({
   index = 0,
   onValidate,
   href,
+  statut: statutControle,
 }: {
   candidate: SourcingCandidateView;
   index?: number;
   onValidate?: (id: string, statut: "valide" | "rejete") => Promise<void>;
   /** Lien vers la fiche détaillée. Absent en démo, où la fiche n'existe pas. */
   href?: string;
+  /**
+   * Statut imposé par le parent. Quand la liste répartit les candidats en
+   * onglets, c'est elle qui détient la décision : la carte ne peut pas garder
+   * un état séparé, sinon un candidat déplacé dans « Validés » continuerait
+   * d'afficher ses boutons le temps que le serveur réponde.
+   */
+  statut?: "a_valider" | "valide" | "rejete";
 }) {
-  const [statut, setStatut] = useState(candidate.statutValidation);
+  const [statutLocal, setStatutLocal] = useState(candidate.statutValidation);
+  const statut = statutControle ?? statutLocal;
   const [pending, setPending] = useState<null | "valide" | "rejete">(null);
   const p = candidate.profil;
   // Expérience la plus significative, après dédoublonnage : le tableau brut
@@ -36,7 +45,7 @@ export function CandidateCard({
     setPending(next);
     try {
       await onValidate?.(candidate.id, next);
-      setStatut(next);
+      if (statutControle === undefined) setStatutLocal(next);
     } finally {
       setPending(null);
     }
