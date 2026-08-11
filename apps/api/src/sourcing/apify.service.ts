@@ -38,6 +38,21 @@ export class QuotaScrapingEpuiseError extends Error {
 }
 
 /**
+ * Levée quand le run n'a pas abouti pour une raison PASSAGÈRE : délai dépassé,
+ * plantage de l'actor, source qui refuse temporairement de répondre.
+ *
+ * Distincte du quota épuisé, car l'issue n'est pas la même : ici, réessayer
+ * plus tard fonctionne. Les confondre a conduit à annoncer au recruteur un
+ * « quota épuisé » alors que le compte n'avait consommé que 0,69 $ sur 5 $.
+ */
+export class ScrapingIndisponibleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScrapingIndisponibleError";
+  }
+}
+
+/**
  * Client Apify partagé par le sourcing de postes et l'enrichissement CVthèque.
  *
  * Un run Apify est asynchrone : on le démarre, puis on interroge son statut
@@ -74,19 +89,64 @@ export class ApifyService {
     return "Short";
   }
 
+  /**
+   * Durée accordée au run côté Apify. Le défaut de l'actor est de 180 s :
+   * insuffisant dès que la recherche porte sur plusieurs villes, et le run est
+   * alors tué sans avoir produit la moindre ligne (« Nothing extracted yet »).
+   */
+  private static readonly RUN_TIMEOUT_SECS = 420;
+
+  /**
+   * Attentes avant nouvelle tentative. Croissantes : la cause habituelle est
+   * une source qui nous refuse temporairement l'accès après plusieurs
+   * recherches rapprochées — la seule chose qui aide est de la laisser
+   * respirer.
+   */
+  private static readonly ATTENTES_AVANT_REESSAI = [45_000, 120_000] as const;
+
+  /**
+   * Lance l'actor et rend ses résultats, en réessayant les échecs passagers.
+   *
+   * Un quota épuisé n'est jamais réessayé : la tentative suivante échouerait
+   * à l'identique, en faisant seulement attendre le recruteur plus longtemps.
+   */
   async runActor<T = unknown>(
     actorId: string,
     input: unknown,
     timeoutMs = 10 * 60 * 1000,
   ): Promise<{ runId: string; items: T[] }> {
+    const tentatives = ApifyService.ATTENTES_AVANT_REESSAI.length + 1;
+
+    for (let essai = 1; ; essai++) {
+      try {
+        return await this.executerUnRun<T>(actorId, input, timeoutMs);
+      } catch (err) {
+        const attente = ApifyService.ATTENTES_AVANT_REESSAI[essai - 1];
+        if (!(err instanceof ScrapingIndisponibleError) || attente === undefined) throw err;
+        this.logger.warn(
+          `${err.message} Nouvelle tentative dans ${attente / 1000} s (${essai}/${tentatives}).`,
+        );
+        await new Promise((r) => setTimeout(r, attente));
+      }
+    }
+  }
+
+  private async executerUnRun<T>(
+    actorId: string,
+    input: unknown,
+    timeoutMs: number,
+  ): Promise<{ runId: string; items: T[] }> {
     const token = this.token();
     if (!token) throw new Error("APIFY_TOKEN is not set");
 
-    const start = await fetch(`${APIFY_API_BASE}/acts/${actorId}/runs?token=${token}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    });
+    const start = await fetch(
+      `${APIFY_API_BASE}/acts/${actorId}/runs?token=${token}&timeout=${ApifyService.RUN_TIMEOUT_SECS}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    );
     if (!start.ok) throw new Error(`Apify start ${start.status}: ${await start.text()}`);
     const run = ((await start.json()) as { data: ApifyRun }).data;
 
@@ -98,7 +158,17 @@ export class ApifyService {
       const res = await fetch(`${APIFY_API_BASE}/actor-runs/${run.id}?token=${token}`);
       cur = ((await res.json()) as { data: ApifyRun }).data;
     }
-    if (cur.status !== "SUCCEEDED") throw new Error(`Apify run ${run.id} status ${cur.status}`);
+    if (cur.status !== "SUCCEEDED") {
+      const detail = cur.statusMessage ? ` (« ${cur.statusMessage} »)` : "";
+      // TIMED-OUT et FAILED sont passagers ; ABORTED est un arrêt humain
+      // délibéré, que réessayer contredirait.
+      if (cur.status === "TIMED-OUT" || cur.status === "FAILED") {
+        throw new ScrapingIndisponibleError(
+          `Run Apify ${run.id} interrompu : ${cur.status}${detail}.`,
+        );
+      }
+      throw new Error(`Apify run ${run.id} status ${cur.status}${detail}`);
+    }
 
     const ds = await fetch(
       `${APIFY_API_BASE}/datasets/${cur.defaultDatasetId}/items?token=${token}&format=json`,
