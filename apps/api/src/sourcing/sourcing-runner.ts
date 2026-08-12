@@ -166,6 +166,10 @@ export class SourcingRunner {
             "Contactez l'administrateur de votre espace.",
         });
       } else {
+        // Le détail technique brut n'a pas sa place à l'écran, mais il doit
+        // exister quelque part : sans lui, diagnostiquer imposait de fouiller
+        // les journaux du serveur.
+        this.logger.error(`Sourcing du poste ${jobId} échoué : ${String(err)}`);
         await this.marquer(tenantId, jobId, "echec", {
           message: "La recherche a échoué pour une raison technique. Réessayez dans un moment.",
         });

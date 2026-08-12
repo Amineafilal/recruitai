@@ -131,6 +131,44 @@ export class ApifyService {
     }
   }
 
+  /**
+   * Appel réseau à Apify, dont les pannes de transport sont réessayables.
+   *
+   * `fetch` ne lève pas sur un code HTTP d'erreur : il ne lève que si la
+   * connexion elle-même a échoué — DNS momentanément muet, coupure Wi-Fi,
+   * pare-feu. Node emballe alors la cause réelle dans un `TypeError: fetch
+   * failed` sans le moindre détail. Non traduite, cette erreur remontait
+   * telle quelle et faisait échouer définitivement un sourcing que la
+   * tentative suivante aurait mené à bien — constaté le 11 août à 21:16,
+   * alors qu'Apify répondait normalement quelques minutes plus tard.
+   *
+   * Le délai borné évite l'autre issue : une connexion à demi ouverte qui
+   * retient le sourcing indéfiniment, sans erreur ni résultat.
+   */
+  private async appeler(
+    url: string,
+    init?: RequestInit,
+    /**
+     * Nombre de reprises immédiates. Réservé aux LECTURES : les rejouer est
+     * sans conséquence. Le démarrage d'un run garde 0 — si la requête a
+     * atteint Apify mais que la réponse s'est perdue, la rejouer lancerait un
+     * second run facturé, et dupliquerait les candidats.
+     */
+    reprises = 0,
+  ): Promise<Response> {
+    for (let essai = 0; ; essai++) {
+      try {
+        return await fetch(url, { ...init, signal: AbortSignal.timeout(60_000) });
+      } catch (err) {
+        const cause = (err as { cause?: { code?: string } })?.cause?.code;
+        const raison = cause ?? (err as Error).name ?? "erreur réseau";
+        if (essai >= reprises) throw new ScrapingIndisponibleError(`Apify injoignable (${raison}).`);
+        this.logger.warn(`Apify injoignable (${raison}) — reprise immédiate ${essai + 1}/${reprises}.`);
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+  }
+
   private async executerUnRun<T>(
     actorId: string,
     input: unknown,
@@ -139,7 +177,7 @@ export class ApifyService {
     const token = this.token();
     if (!token) throw new Error("APIFY_TOKEN is not set");
 
-    const start = await fetch(
+    const start = await this.appeler(
       `${APIFY_API_BASE}/acts/${actorId}/runs?token=${token}&timeout=${ApifyService.RUN_TIMEOUT_SECS}`,
       {
         method: "POST",
@@ -147,6 +185,11 @@ export class ApifyService {
         body: JSON.stringify(input),
       },
     );
+    // 5xx : panne côté fournisseur, réessayer a du sens. 4xx : jeton ou
+    // requête invalides, réessayer donnerait exactement la même réponse.
+    if (start.status >= 500) {
+      throw new ScrapingIndisponibleError(`Apify a répondu ${start.status} au démarrage du run.`);
+    }
     if (!start.ok) throw new Error(`Apify start ${start.status}: ${await start.text()}`);
     const run = ((await start.json()) as { data: ApifyRun }).data;
 
@@ -155,7 +198,18 @@ export class ApifyService {
     while (!TERMINAL.has(cur.status)) {
       if (Date.now() > deadline) throw new Error(`Apify run ${run.id} timeout`);
       await new Promise((r) => setTimeout(r, 5000));
-      const res = await fetch(`${APIFY_API_BASE}/actor-runs/${run.id}?token=${token}`);
+      // Une coupure pendant la surveillance ne doit pas faire perdre un run
+      // qui tourne peut-être très bien : on repasse simplement au sondage
+      // suivant, la boucle est déjà bornée par `deadline`.
+      const res = await this.appeler(
+        `${APIFY_API_BASE}/actor-runs/${run.id}?token=${token}`,
+        undefined,
+        2,
+      ).catch((err: unknown) => {
+        this.logger.warn(`Sondage du run ${run.id} échoué, nouvelle lecture dans 5 s : ${String(err)}`);
+        return null;
+      });
+      if (!res) continue;
       cur = ((await res.json()) as { data: ApifyRun }).data;
     }
     if (cur.status !== "SUCCEEDED") {
@@ -170,8 +224,13 @@ export class ApifyService {
       throw new Error(`Apify run ${run.id} status ${cur.status}${detail}`);
     }
 
-    const ds = await fetch(
+    // Le run a réussi et il est facturé : une coupure au moment de lire ses
+    // résultats ne doit pas conduire à en relancer un second. D'où trois
+    // reprises sur place plutôt qu'une remontée vers le réessai global.
+    const ds = await this.appeler(
       `${APIFY_API_BASE}/datasets/${cur.defaultDatasetId}/items?token=${token}&format=json`,
+      undefined,
+      3,
     );
     const items = (await ds.json()) as T[];
 

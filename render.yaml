@@ -58,8 +58,13 @@ services:
 
       - key: APIFY_TOKEN
         sync: false
+      # fabri-lab et non harvestapi : ce dernier bloque les comptes Apify
+      # gratuits au-delà de 10 exécutions au total, restriction non documentée
+      # visible seulement dans les journaux d'exécution. Déployer avec lui
+      # produirait une API qui ne trouve jamais aucun candidat, sans erreur
+      # apparente. À rebasculer le jour d'un plan Apify payant.
       - key: APIFY_LINKEDIN_ACTOR_ID
-        value: harvestapi~linkedin-profile-search
+        value: fabri-lab~linkedin-public-search-lead-extractor
       - key: APIFY_LINKEDIN_MODE
         value: Short
       - key: APIFY_MAX_PROFILES_PER_SEARCH
