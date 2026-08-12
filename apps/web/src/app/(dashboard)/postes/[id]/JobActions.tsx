@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { SECTEURS } from "@recruitai/types";
 import { Modal, ConfirmDialog } from "@/components/Modal";
 import { VillesInput } from "@/components/VillesInput";
 import { villesJob, type JobView } from "@/lib/view-types";
@@ -73,6 +74,25 @@ export function JobActions({ job }: { job: JobView }) {
             }
             className="flex flex-col gap-4"
           >
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[13px] text-ink-soft">
+                Secteur d'activité <span className="text-ink-faint">(facultatif)</span>
+              </label>
+              {/* Repris tel quel du poste : sans ce champ, la moindre
+                  modification effacerait silencieusement le secteur. */}
+              <select
+                name="secteur"
+                defaultValue={job.criteres.secteur ?? ""}
+                className="rounded-lg border border-line bg-card px-3 py-2 text-[14px] text-ink outline-none focus:border-accent"
+              >
+                <option value="">Tous secteurs</option>
+                {SECTEURS.map((s) => (
+                  <option key={s.cle} value={s.cle}>
+                    {s.libelle}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Champ label="Intitulé du poste" name="titre" defaultValue={job.criteres.titre} required />
             <VillesInput initial={villesJob(job.criteres)} />
             <Champ label="Séniorité" name="seniorite" defaultValue={job.criteres.seniorite ?? ""} />

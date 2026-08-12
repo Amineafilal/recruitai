@@ -16,6 +16,7 @@ function lireVilles(formData: FormData): string[] {
 export async function createJob(formData: FormData) {
   const titre = String(formData.get("titre") ?? "").trim();
   const seniorite = String(formData.get("seniorite") ?? "").trim();
+  const secteur = String(formData.get("secteur") ?? "").trim();
   const competences = String(formData.get("competences") ?? "")
     .split(",")
     .map((c) => c.trim())
@@ -29,6 +30,8 @@ export async function createJob(formData: FormData) {
       titre,
       localisations: lireVilles(formData),
       seniorite: seniorite || undefined,
+      // Chaîne vide interdite par le schéma : « tous secteurs » vaut absence.
+      secteur: secteur || undefined,
       competences,
     }),
   });
@@ -36,7 +39,16 @@ export async function createJob(formData: FormData) {
   revalidatePath("/postes");
 }
 
-export async function setValidation(candidateId: string, statut: "valide" | "rejete", jobId: string) {
+/**
+ * `a_valider` est accepté volontairement : c'est ce qui rend l'annulation
+ * possible. Un candidat qui disparaît de la liste au moindre clic doit pouvoir
+ * y revenir, sinon le recruteur n'ose plus trancher vite.
+ */
+export async function setValidation(
+  candidateId: string,
+  statut: "a_valider" | "valide" | "rejete",
+  jobId: string,
+) {
   await apiFetch(`/candidates/${candidateId}/validation`, {
     method: "PATCH",
     body: JSON.stringify({ statut }),
@@ -48,6 +60,7 @@ export async function setValidation(candidateId: string, statut: "valide" | "rej
 export async function updateJob(jobId: string, formData: FormData): Promise<{ error?: string } | void> {
   const titre = String(formData.get("titre") ?? "").trim();
   const seniorite = String(formData.get("seniorite") ?? "").trim();
+  const secteur = String(formData.get("secteur") ?? "").trim();
   const competences = String(formData.get("competences") ?? "")
     .split(",")
     .map((c) => c.trim())
@@ -64,6 +77,7 @@ export async function updateJob(jobId: string, formData: FormData): Promise<{ er
         // mono-ville vers le nouveau champ à la première modification.
         localisations: lireVilles(formData),
         seniorite: seniorite || undefined,
+        secteur: secteur || undefined,
         competences,
       }),
     });

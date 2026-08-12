@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { libelleSecteur } from "@recruitai/types";
 import { PageHeader } from "@/components/CockpitShell";
-import { CandidateCard } from "@/components/CandidateCard";
 import { Pill } from "@/components/badges";
 import { apiFetch } from "@/lib/api";
 import { villesJob, type JobView, type SourcingCandidateView } from "@/lib/view-types";
 import { setValidation } from "../actions";
 import { JobActions } from "./JobActions";
+import { ListeCandidats } from "./ListeCandidats";
 import { PipelineBoard } from "./PipelineBoard";
 import { VueToggle } from "./VueToggle";
 import { EtatSourcing } from "@/components/EtatSourcing";
@@ -25,7 +26,7 @@ export default async function ShortlistPage({ params }: { params: { id: string }
   const villes = villesJob(job.criteres);
 
   // Server action liée au poste courant, passée aux cartes (composants client).
-  async function onValidate(id: string, statut: "valide" | "rejete") {
+  async function onValidate(id: string, statut: "a_valider" | "valide" | "rejete") {
     "use server";
     await setValidation(id, statut, params.id);
   }
@@ -62,6 +63,7 @@ export default async function ShortlistPage({ params }: { params: { id: string }
             </div>
           )}
         </div>
+        <Meta label="Secteur" value={libelleSecteur(job.criteres.secteur) ?? "Tous secteurs"} />
         <Meta label="Séniorité" value={job.criteres.seniorite ?? "—"} />
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[12px] uppercase tracking-wider text-ink-faint">Compétences</span>
@@ -83,17 +85,7 @@ export default async function ShortlistPage({ params }: { params: { id: string }
         <VueToggle
           pipeline={<PipelineBoard candidats={candidats} jobId={params.id} />}
           liste={
-            <div className="flex flex-col gap-3">
-              {candidats.map((c, i) => (
-                <CandidateCard
-                  key={c.id}
-                  candidate={c}
-                  index={i}
-                  onValidate={onValidate}
-                  href={`/postes/${params.id}/candidats/${c.id}`}
-                />
-              ))}
-            </div>
+            <ListeCandidats candidats={candidats} jobId={params.id} onValidate={onValidate} />
           }
         />
       )}

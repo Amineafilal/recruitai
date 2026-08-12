@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { SECTEURS } from "@recruitai/types";
 import { VillesInput } from "@/components/VillesInput";
 import { createJob } from "./actions";
 
 export function NewJobButton() {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  // Le secteur pilote les exemples des deux champs libres. Un cabinet qui
+  // recrute en hôtellerie ne doit jamais lire « Développeur React ».
+  const [secteur, setSecteur] = useState<string>("");
+
+  const modele = SECTEURS.find((s) => s.cle === secteur);
 
   async function action(formData: FormData) {
     setPending(true);
@@ -41,7 +47,34 @@ export function NewJobButton() {
               L'agent IA sourcera et scorera des candidats dès demain matin.
             </p>
             <form action={action} className="flex flex-col gap-3">
-              <Field name="titre" label="Intitulé du poste" placeholder="Développeur React" required />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[13px] text-ink-soft">
+                  Secteur d'activité <span className="text-ink-faint">(facultatif)</span>
+                </label>
+                <select
+                  name="secteur"
+                  value={secteur}
+                  onChange={(e) => setSecteur(e.target.value)}
+                  className="rounded-lg border border-line bg-card px-3 py-2 text-[14px] text-ink outline-none focus:border-accent"
+                >
+                  <option value="">Tous secteurs</option>
+                  {SECTEURS.map((s) => (
+                    <option key={s.cle} value={s.cle}>
+                      {s.libelle}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[12px] text-ink-faint">
+                  Sert à départager les métiers de même intitulé — un chargé de clientèle en
+                  banque n'est pas celui d'un opérateur télécom.
+                </span>
+              </div>
+              <Field
+                name="titre"
+                label="Intitulé du poste"
+                placeholder={modele?.exempleTitre ?? "Intitulé du poste à pourvoir"}
+                required
+              />
               <VillesInput />
               <div className="flex flex-col gap-1.5">
                 <label className="text-[13px] text-ink-soft">Séniorité</label>
@@ -56,7 +89,11 @@ export function NewJobButton() {
                   <option value="lead">Lead</option>
                 </select>
               </div>
-              <Field name="competences" label="Compétences (séparées par des virgules)" placeholder="React, TypeScript, Next.js" />
+              <Field
+                name="competences"
+                label="Compétences (séparées par des virgules)"
+                placeholder={modele?.exempleCompetences ?? "Compétences attendues, séparées par des virgules"}
+              />
               <div className="mt-2 flex justify-end gap-2">
                 <button
                   type="button"

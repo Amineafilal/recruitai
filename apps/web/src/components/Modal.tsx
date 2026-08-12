@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Boîte de dialogue commune aux formulaires et confirmations du cockpit.
  * Fermeture au clic extérieur et à Échap — sauf pendant une soumission, pour
  * éviter de fermer l'écran alors que la requête est encore en vol.
+ *
+ * Rendue dans un PORTAIL, à la racine du document, et non là où elle est
+ * appelée. Raison mesurée : les cartes du cockpit portent l'animation
+ * `rise-in`, qui laisse un `transform` sur l'élément une fois jouée. Or un
+ * transform — même identité — crée un bloc conteneur pour les descendants
+ * `position: fixed`. La modale se calait donc sur la carte appelante (110 px
+ * de haut) au lieu de la fenêtre : voile assombri réduit à une bande, dialogue
+ * coupé, boutons hors de l'écran. Le portail la sort de tout ancêtre transformé
+ * et immunise durablement le composant.
  */
 export function Modal({
   titre,
@@ -22,6 +32,11 @@ export function Modal({
   bloque?: boolean;
   largeur?: string;
 }) {
+  // Le portail n'existe qu'au navigateur : on ne rend rien au premier passage
+  // serveur, sinon l'hydratation diverge.
+  const [monte, setMonte] = useState(false);
+  useEffect(() => setMonte(true), []);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && !bloque) onClose();
@@ -30,20 +45,41 @@ export function Modal({
     return () => document.removeEventListener("keydown", onKey);
   }, [bloque, onClose]);
 
-  return (
+  // Le fond ne doit pas défiler sous la modale : la molette faisait glisser la
+  // page derrière le voile, et l'on retrouvait un écran différent en fermant.
+  useEffect(() => {
+    const avant = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = avant;
+    };
+  }, []);
+
+  if (!monte) return null;
+
+  return createPortal(
     <div
-      className="animate-fade-in fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/60 p-6 backdrop-blur-sm"
+      className="animate-fade-in fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
       onClick={() => !bloque && onClose()}
     >
-      <div
-        className={`card animate-rise-in my-auto ${largeur} max-w-[94vw] p-6`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="mb-1 font-display text-xl font-bold text-ink">{titre}</h2>
-        {description && <p className="mb-5 text-[13px] text-ink-soft">{description}</p>}
-        {children}
+      {/* min-h-full + centrage en flex plutôt que place-items-center : quand la
+          boîte dépasse la hauteur de la fenêtre, un centrage strict pousse son
+          haut au-dessus de la zone défilable et le titre devient inatteignable.
+          Ici elle se cale en haut et défile normalement. */}
+      <div className="flex min-h-full items-center justify-center p-6">
+        <div
+          className={`card animate-rise-in ${largeur} max-w-[94vw] p-6`}
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 className="mb-1 font-display text-xl font-bold text-ink">{titre}</h2>
+          {description && <p className="mb-5 text-[13px] text-ink-soft">{description}</p>}
+          {children}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

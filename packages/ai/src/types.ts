@@ -74,8 +74,12 @@ export const ReponseIaSchema = z.object({
 });
 
 export interface ScoringResult {
-  /** Moyenne pondérée des critères, arrondie. */
-  score: number;
+  /**
+   * Moyenne pondérée des critères, arrondie. `null` quand AUCUN critère
+   * n'était évaluable : l'appel à l'IA a abouti, mais le profil ne contenait
+   * rien à noter. À distinguer d'un scoring en panne, qui mérite un réessai.
+   */
+  score: number | null;
   /** Phrase de synthèse, conservée pour l'affichage résumé. */
   justification: string;
   /** Détail par critère, pour expliquer la note au recruteur. */
@@ -102,7 +106,7 @@ export interface ScoringResult {
  */
 const MARGE_AU_DESSUS_DES_COMPETENCES = 25;
 
-export function calculerScore(criteres: CriteresEvalues): number {
+export function calculerScore(criteres: CriteresEvalues): number | null {
   let somme = 0;
   let poidsTotal = 0;
 
@@ -113,8 +117,14 @@ export function calculerScore(criteres: CriteresEvalues): number {
     poidsTotal += poids;
   }
 
-  // Aucun critère évaluable : on ne peut pas prétendre noter ce profil.
-  if (poidsTotal === 0) return 0;
+  // Aucun critère évaluable : ce profil n'est pas notable, et le dire vaut
+  // mieux que de renvoyer 0.
+  //
+  // Renvoyer 0 affirmait exactement le contraire du commentaire qui précédait
+  // cette ligne : que le candidat avait été jugé, et jugé nul. Trois profils
+  // sans la moindre donnée exploitable se retrouvaient ainsi classés derniers,
+  // à égalité avec ceux à qui il manquait réellement la compétence demandée.
+  if (poidsTotal === 0) return null;
   const moyenne = somme / poidsTotal;
 
   const noteCompetences = criteres.competences?.note;

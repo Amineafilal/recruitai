@@ -24,27 +24,37 @@ export function CampaignActions({ campagne }: { campagne: CampaignFull }) {
   }
 
   return (
-    <div className="flex items-center gap-3">
-      {resultat && <span className="text-[12px] font-medium text-emerald">{resultat}</span>}
+    // shrink-0 : sur mobile, ce bloc cédait zéro pixel et étranglait le nom de
+    // la campagne à 97 px. Il passe désormais sous le texte au lieu de le
+    // comprimer.
+    <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+      {resultat && (
+        <span className="rounded-md bg-emerald-soft px-2 py-1 text-[12px] font-semibold text-emerald">
+          {resultat}
+        </span>
+      )}
 
+      {/* L'action qui expédie de vrais emails porte seule un contour : elle est
+          irréversible, elle ne doit pas se confondre avec « Modifier ». */}
       <button
         onClick={() => {
           setResultat(null);
           setDialogue("envoi");
         }}
-        className="text-[13px] font-medium text-ink-faint transition-colors hover:text-accent"
+        className="rounded-lg border border-accent/40 px-3 py-1.5 text-[13px] font-semibold text-accent transition-colors hover:bg-accent-soft"
       >
         Envoyer maintenant
       </button>
       <button
         onClick={() => setDialogue("edition")}
-        className="text-[13px] font-medium text-ink-faint transition-colors hover:text-accent"
+        className="rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-ink-soft transition-colors hover:bg-paper-2 hover:text-ink"
       >
         Modifier
       </button>
       <button
         onClick={() => setDialogue("suppression")}
-        className="text-[13px] font-medium text-ink-faint transition-colors hover:text-danger"
+        aria-label={`Supprimer la campagne ${campagne.nom}`}
+        className="rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-ink-faint transition-colors hover:bg-danger-soft hover:text-danger"
       >
         Supprimer
       </button>
