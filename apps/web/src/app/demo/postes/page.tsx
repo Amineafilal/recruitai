@@ -18,7 +18,10 @@ export default function DemoPostesPage() {
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatTile label="Postes actifs" value={ouverts} accent="emerald" delay={0} hint="sur 4 postes" />
         <StatTile label="Candidats sourcés" value={total} accent="accent" delay={80} hint="toutes shortlists" />
-        <StatTile label="Sources actives" value={4} accent="blue" delay={160} hint="LinkedIn, Indeed, Apec, WTTJ" />
+        {/* La démo annonçait quatre sources ; une seule est branchée. Une
+            vitrine qui promet plus que le produit se retourne contre lui au
+            premier essai. */}
+        <StatTile label="Sources actives" value={1} accent="blue" delay={160} hint="LinkedIn" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
