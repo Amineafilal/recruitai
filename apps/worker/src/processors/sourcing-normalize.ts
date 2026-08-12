@@ -51,6 +51,8 @@ export async function processSourcingNormalize(job: Job<SourcingNormalizeJobData
   //    lot brut en "normalized".
   await withTenant(tenantId, async (tx) => {
     if (scored.length > 0) {
+      // Même raison que dans apps/api : un profil déjà présent ne doit ni
+      // dupliquer la shortlist, ni faire échouer tout le lot.
       await tx.insert(schema.sourcingCandidates).values(
         scored.map(({ profil, score, statut }) => ({
           tenantId,
@@ -65,7 +67,7 @@ export async function processSourcingNormalize(job: Job<SourcingNormalizeJobData
           profil,
           statutValidation: "a_valider" as const,
         })),
-      );
+      ).onConflictDoNothing();
     }
     await tx
       .update(schema.rawScrapeResults)

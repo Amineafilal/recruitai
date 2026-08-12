@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { desc, eq, and, sql } from "drizzle-orm";
 import { withTenant, schema } from "@recruitai/db";
 import {
@@ -14,8 +14,36 @@ const LIBELLES_ETAPE = PIPELINE_LABELS;
 
 @Injectable()
 export class SourcingService {
+  private readonly logger = new Logger(SourcingService.name);
+
+  /**
+   * Combien de candidats attendent une décision, et depuis combien de temps.
+   *
+   * Le seuil de 48 h n'est pas arbitraire : un candidat sourcé ce matin n'est
+   * pas « oublié », et alerter dès la première heure banaliserait le signal au
+   * point qu'on cesserait de le voir. Deux jours, c'est le moment où le
+   * recruteur a objectivement laissé passer son tour.
+   */
+  async candidatsEnAttente(tenantId: string): Promise<{ total: number; depasses: number }> {
+    return withTenant(tenantId, async (tx) => {
+      const [r] = await tx
+        .select({
+          total: sql<number>`count(*)::int`,
+          depasses: sql<number>`count(*) filter (where ${schema.sourcingCandidates.createdAt} < now() - interval '48 hours')::int`,
+        })
+        .from(schema.sourcingCandidates)
+        .where(
+          and(
+            eq(schema.sourcingCandidates.tenantId, tenantId),
+            eq(schema.sourcingCandidates.statutValidation, "a_valider"),
+          ),
+        );
+      return { total: r?.total ?? 0, depasses: r?.depasses ?? 0 };
+    });
+  }
+
   async shortlist(tenantId: string, jobId: string) {
-    return withTenant(tenantId, (tx) =>
+    const lignes = await withTenant(tenantId, (tx) =>
       tx
         .select()
         .from(schema.sourcingCandidates)
@@ -25,6 +53,30 @@ export class SourcingService {
         // au-dessus des meilleurs profils.
         .orderBy(sql`${schema.sourcingCandidates.score} desc nulls last`),
     );
+
+    // Dernier filet, derrière l'index d'unicité de la migration 0012.
+    //
+    // Il ne devrait jamais servir : si c'est le cas, l'index a été contourné
+    // ou perdu, et c'est un incident à corriger — d'où l'avertissement plutôt
+    // qu'un dédoublonnage muet. Un filtre silencieux ferait disparaître le
+    // symptôme en laissant la cause s'installer.
+    const vus = new Set<string>();
+    const uniques = lignes.filter((c) => {
+      const url = (c.profil as { linkedinUrl?: unknown } | null)?.linkedinUrl;
+      if (typeof url !== "string" || !url) return true;
+      const cle = url.toLowerCase();
+      if (vus.has(cle)) return false;
+      vus.add(cle);
+      return true;
+    });
+
+    if (uniques.length !== lignes.length) {
+      this.logger.error(
+        `Doublons en base sur le poste ${jobId} : ${lignes.length - uniques.length} masqué(s) à ` +
+          `l'affichage. L'index sourcing_candidates_job_profil_idx est absent ou contourné.`,
+      );
+    }
+    return uniques;
   }
 
   /**
