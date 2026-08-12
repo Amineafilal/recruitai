@@ -15,7 +15,7 @@ export default async function CampagnesPage() {
   return (
     <>
       <PageHeader eyebrow="Relances automatisées" title="Campagnes">
-        <NewCampaignButton />
+        <NewCampaignButton nombreExistant={campagnes.length} />
       </PageHeader>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
