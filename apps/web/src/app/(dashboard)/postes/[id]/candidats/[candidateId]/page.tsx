@@ -13,6 +13,7 @@ import {
   dureeLisible,
   experiencesNormalisees,
   initials,
+  profilDocumente,
   skillLabel,
   type CandidateDetailView,
   type ExperienceNormalisee,
@@ -163,7 +164,11 @@ export default async function CandidatPage({
               </div>
             )}
             {candidat.scoringCriteres && (
-              <ScoreDetail criteres={candidat.scoringCriteres} score={candidat.score} />
+              <ScoreDetail
+                criteres={candidat.scoringCriteres}
+                score={candidat.score}
+                documente={profilDocumente(p)}
+              />
             )}
           </div>
         )

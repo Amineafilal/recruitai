@@ -11,9 +11,16 @@ import { PONDERATION_SCORE, type CriteresScoreView } from "@/lib/view-types";
 export function ScoreDetail({
   criteres,
   score,
+  documente = true,
 }: {
   criteres: CriteresScoreView;
   score: number | null;
+  /**
+   * Faux quand la source n'a rien renvoyé de vérifiable au-delà de l'intitulé.
+   * Le total est alors plafonné, et il faut le dire : sans explication, des
+   * composantes à 100 sous un total de 85 passent pour une erreur de calcul.
+   */
+  documente?: boolean;
 }) {
   const noteCompetences = criteres.competences?.note ?? null;
 
@@ -77,6 +84,15 @@ export function ScoreDetail({
           );
         })}
       </div>
+
+      {!documente && score !== null && score >= 85 && (
+        <p className="mt-4 rounded-lg border border-amber/40 bg-amber/10 px-3 py-2 text-[13px] leading-relaxed text-ink-soft">
+          <strong className="text-ink">Note plafonnée à 85.</strong> La source n'a renvoyé que
+          l'intitulé de ce profil — ni employeurs, ni dates, ni formation. L'expérience et la
+          séniorité sont donc jugées sur la même phrase, et rien ici n'est vérifiable. Ouvrez le
+          profil LinkedIn avant de décider.
+        </p>
+      )}
 
       {plafonne && (
         <p className="mt-4 rounded-lg border border-amber/40 bg-amber/10 px-3 py-2 text-[13px] leading-relaxed text-ink-soft">

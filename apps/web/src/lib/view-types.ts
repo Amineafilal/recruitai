@@ -270,6 +270,39 @@ export const PONDERATION_SCORE = [
   { cle: "localisation" as const, libelle: "Localisation", poids: 0.15 },
 ];
 
+/**
+ * Le profil apporte-t-il autre chose que son intitulé ?
+ *
+ * Reprend la règle de `profilDocumente()` de @recruitai/ai, qui décide du
+ * plafonnement au moment de la notation. Dupliquée ici — comme
+ * `PONDERATION_SCORE` et `villesJob()` juste au-dessus — pour que le site
+ * n'ait pas à dépendre du paquet de scoring, qui embarquerait les clients
+ * Mistral et OpenAI dans le build pour dix lignes de logique.
+ *
+ * Si la règle change là-bas, la mettre à jour ici : sans quoi la fiche
+ * candidat expliquerait un plafond qui ne s'applique plus, ou l'inverse.
+ */
+export function profilDocumente(brut: unknown): boolean {
+  if (!brut || typeof brut !== "object") return false;
+  const profil = brut as Record<string, unknown>;
+
+  const postes = [
+    ...(Array.isArray(profil.experience) ? profil.experience : []),
+    ...(Array.isArray(profil.currentPositions) ? profil.currentPositions : []),
+  ];
+  const posteDetaille = postes.some((poste) => {
+    if (!poste || typeof poste !== "object") return false;
+    const o = poste as Record<string, unknown>;
+    return Boolean(o.companyName || o.startedOn || o.tenureAtPosition || o.tenureAtCompany);
+  });
+
+  const formation = Array.isArray(profil.education) && profil.education.length > 0;
+  const localisation =
+    typeof profil.location === "string" ? profil.location.trim() !== "" : Boolean(profil.location);
+
+  return posteDetaille || formation || localisation;
+}
+
 export interface SourcingCandidateView {
   id: string;
   source: string;
