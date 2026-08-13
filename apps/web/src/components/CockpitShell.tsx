@@ -3,7 +3,7 @@ import { CockpitNav } from "./CockpitNav";
 import { MobileSidebar } from "./MobileSidebar";
 
 /** Contenu de la barre latérale, partagé entre le rail fixe et le tiroir mobile. */
-function SidebarContenu({ navBase }: { navBase: string }) {
+function SidebarContenu({ navBase, aValiderDepasses = 0 }: { navBase: string; aValiderDepasses?: number }) {
   return (
     <>
       <div className="flex items-center gap-2.5 px-5 py-5">
@@ -15,7 +15,7 @@ function SidebarContenu({ navBase }: { navBase: string }) {
       <div className="px-4 pb-2">
         <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">Menu</p>
       </div>
-      <CockpitNav navBase={navBase} />
+      <CockpitNav navBase={navBase} aValiderDepasses={aValiderDepasses} />
     </>
   );
 }
@@ -24,17 +24,20 @@ export function CockpitShell({
   children,
   navBase = "",
   user,
+  aValiderDepasses = 0,
 }: {
   children: ReactNode;
   navBase?: string;
   user?: ReactNode;
+  /** Candidats « à valider » laissés en attente depuis plus de 48 h. */
+  aValiderDepasses?: number;
 }) {
   return (
     <div className="flex min-h-screen bg-paper">
       {/* Rail fixe à partir de lg. En dessous, la place est trop rare : la
           navigation passe dans un tiroir ouvert depuis l'en-tête. */}
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col border-r border-line bg-card lg:flex">
-        <SidebarContenu navBase={navBase} />
+        <SidebarContenu navBase={navBase} aValiderDepasses={aValiderDepasses} />
       </aside>
 
       {/* min-w-0 : sans lui, un enfant flex garde `min-width: auto` et un
@@ -44,7 +47,7 @@ export function CockpitShell({
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-line bg-card/80 px-4 backdrop-blur sm:px-6 lg:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <MobileSidebar>
-              <SidebarContenu navBase={navBase} />
+              <SidebarContenu navBase={navBase} aValiderDepasses={aValiderDepasses} />
             </MobileSidebar>
             {/* La recherche mange trop de place sur mobile : masquée jusqu'à sm. */}
             <div className="hidden items-center gap-2 rounded-lg border border-line bg-paper px-3 py-2 text-[13px] text-ink-faint sm:flex">

@@ -22,7 +22,18 @@ const ICONS: Record<string, ReactNode> = {
   equipe: <Icon d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2|M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8|M22 21v-2a4 4 0 0 0-3-3.87|M16 3.13a4 4 0 0 1 0 7.75" />,
 };
 
-export function CockpitNav({ navBase = "" }: { navBase?: string }) {
+export function CockpitNav({
+  navBase = "",
+  aValiderDepasses = 0,
+}: {
+  navBase?: string;
+  /**
+   * Candidats laissés « à valider » depuis plus de 48 h. Affiché en rouge sur
+   * l'entrée « Postes » : une shortlist s'accumulait sans que rien ne le
+   * signale — 119 candidats en attente lorsque ce compteur a été ajouté.
+   */
+  aValiderDepasses?: number;
+}) {
   const pathname = usePathname();
   const items = [
     { key: "dashboard", href: `${navBase}/tableau-de-bord`, label: "Tableau de bord" },
@@ -48,7 +59,15 @@ export function CockpitNav({ navBase = "" }: { navBase?: string }) {
             }`}
           >
             <span className={active ? "text-accent" : "text-ink-faint"}>{ICONS[item.key]}</span>
-            {item.label}
+            <span className="flex-1">{item.label}</span>
+            {item.key === "postes" && aValiderDepasses > 0 && (
+              <span
+                title={`${aValiderDepasses} candidat(s) attendent une décision depuis plus de 48 h`}
+                className="rounded-full bg-danger px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-white"
+              >
+                {aValiderDepasses > 99 ? "99+" : aValiderDepasses}
+              </span>
+            )}
           </Link>
         );
       })}

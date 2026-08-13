@@ -28,6 +28,18 @@ export class SourcingController {
     return this.sourcingService.shortlist(tenant.tenantId, jobId);
   }
 
+  /**
+   * Candidats laissés « à valider » depuis plus de deux jours.
+   *
+   * Alimente le compteur de la barre latérale : sans lui, une shortlist
+   * s'accumule sans que personne ne s'en aperçoive — 119 candidats en attente
+   * au moment où ce compteur a été ajouté.
+   */
+  @Get("candidats/en-attente")
+  enAttente(@CurrentTenant() tenant: TenantContext) {
+    return this.sourcingService.candidatsEnAttente(tenant.tenantId);
+  }
+
   @Get("candidates/:id")
   candidat(@CurrentTenant() tenant: TenantContext, @Param("id") id: string) {
     return this.sourcingService.candidat(tenant.tenantId, id);

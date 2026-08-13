@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/CockpitShell";
 import { StatTile } from "@/components/StatTile";
 import { ScoreRing } from "@/components/ScoreRing";
 import { SourcingAreaChart, SourceBarChart } from "@/components/Charts";
+import { DemarrageChecklist } from "@/components/DemarrageChecklist";
 import { apiFetch } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,15 @@ export default async function TableauDeBordPage() {
         eyebrow="Vue d'ensemble"
         title="Tableau de bord"
         subtitle="L'activité de sourcing et de réactivation de votre agence."
+      />
+
+      {/* Avant les chiffres : un compte neuf n'a rien à lire dans des
+          compteurs à zéro, il a besoin de savoir quoi faire. Disparaît d'elle
+          même une fois les trois étapes franchies. */}
+      <DemarrageChecklist
+        postes={d.postesTotal}
+        profilsCvtheque={d.cvthequeTotal}
+        campagnesActives={d.campagnesActives}
       />
 
       {/* Cartes de stats */}

@@ -228,17 +228,39 @@ function Services() {
 }
 
 /* -------------------------------- Sources -------------------------------- */
+/**
+ * Une seule source est réellement branchée : LinkedIn. Les cinq autres
+ * n'existent qu'à l'état d'identifiants d'actor vides dans la configuration.
+ *
+ * Le bandeau les faisait défiler à l'identique sous le titre « Connecté à
+ * toutes vos sources » — une promesse qu'un cabinet aurait découverte fausse
+ * après signature, ce qui coûte bien plus qu'une source de moins sur une page
+ * d'accueil. On distingue donc ce qui fonctionne de ce qui viendra.
+ */
 function Sources() {
-  const items = ["LinkedIn", "Indeed", "Apec", "Welcome to the Jungle", "Beetween", "Recruitee"];
-  const row = [...items, ...items];
+  const actives = ["LinkedIn"];
+  const aVenir = ["Indeed", "Apec", "Welcome to the Jungle", "Beetween", "Recruitee"];
   return (
     <section className="border-y border-black/5 bg-white py-10">
-      <p className="mb-6 text-center text-[12px] font-bold uppercase tracking-wider text-[#a0a2b4]">Connecté à toutes vos sources</p>
-      <div className="relative overflow-hidden [mask-image:linear-gradient(to_right,transparent,#000_12%,#000_88%,transparent)]">
-        <div className="marquee flex w-max items-center gap-14">
-          {row.map((n, i) => <span key={i} className="whitespace-nowrap text-[19px] font-extrabold text-[#c4c6d4]">{n}</span>)}
-        </div>
+      <p className="mb-6 text-center text-[12px] font-bold uppercase tracking-wider text-[#a0a2b4]">
+        Vos sources de candidats
+      </p>
+      <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-x-8 gap-y-4 px-6">
+        {actives.map((n) => (
+          <span key={n} className="flex items-center gap-2 text-[19px] font-extrabold text-[#5a5c72]">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+            {n}
+          </span>
+        ))}
+        {aVenir.map((n) => (
+          <span key={n} className="whitespace-nowrap text-[17px] font-bold text-[#c4c6d4]">
+            {n}
+          </span>
+        ))}
       </div>
+      <p className="mt-5 text-center text-[13px] text-[#a0a2b4]">
+        LinkedIn est disponible aujourd'hui. Les autres sources arrivent prochainement.
+      </p>
     </section>
   );
 }

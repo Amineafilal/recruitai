@@ -9,8 +9,8 @@ export interface ActionResult {
 }
 
 export async function createCampaign(formData: FormData): Promise<ActionResult> {
-  const nom = String(formData.get("nom") ?? "").trim();
-  const sujet = String(formData.get("sujet") ?? "").trim();
+  const nom = String(formData.get("campagneNom") ?? "").trim();
+  const sujet = String(formData.get("campagneSujet") ?? "").trim();
   const template = String(formData.get("template") ?? "").trim();
   const declencheur = String(formData.get("declencheur") ?? "manuel").trim();
   const delaiMinRelanceJours = Number(formData.get("delaiMinRelanceJours") ?? 90);
@@ -41,8 +41,8 @@ export async function setCampaignStatus(id: string, statut: "actif" | "pause"): 
 }
 
 export async function updateCampaign(id: string, formData: FormData): Promise<ActionResult> {
-  const nom = String(formData.get("nom") ?? "").trim();
-  const sujet = String(formData.get("sujet") ?? "").trim();
+  const nom = String(formData.get("campagneNom") ?? "").trim();
+  const sujet = String(formData.get("campagneSujet") ?? "").trim();
   const template = String(formData.get("template") ?? "").trim();
   const declencheur = String(formData.get("declencheur") ?? "manuel").trim();
   const delaiMinRelanceJours = Number(formData.get("delaiMinRelanceJours") ?? 90);

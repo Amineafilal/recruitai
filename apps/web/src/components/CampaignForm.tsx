@@ -25,10 +25,13 @@ export function CampaignForm({
   onSubmit,
   onClose,
   initial,
+  nomPropose,
 }: {
   onSubmit: (fd: FormData) => Promise<{ ok: boolean; message?: string }>;
   onClose: () => void;
   initial?: CampaignDefaults;
+  /** Nom pré-rempli à la création, du type « Campagne 2 ». */
+  nomPropose?: string;
 }) {
   const edition = Boolean(initial);
   const templateRef = useRef<HTMLTextAreaElement>(null);
@@ -69,16 +72,29 @@ export function CampaignForm({
       bloque={pending}
       largeur="w-[560px]"
     >
-      <form action={action} className="flex flex-col gap-4">
+      {/*
+        autoComplete="off" sur le formulaire ET des noms de champs non
+        sémantiques : Chrome se fie d'abord au NOM du champ. Avec name="nom",
+        il y injectait le patronyme de l'utilisateur — une campagne s'est
+        retrouvée enregistrée sous « Afilal El Alami », objet « 78 ». Le
+        recruteur envoyait alors un email dont le sujet était un nombre.
+      */}
+      <form action={action} autoComplete="off" className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-[13px] text-ink-soft">Nom de la campagne</span>
             <input
-              name="nom"
+              name="campagneNom"
               required
-              defaultValue={initial?.nom}
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              defaultValue={initial?.nom ?? nomPropose}
               placeholder="Réactivation développeurs fullstack"
               className="rounded-lg border border-line bg-card px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
             />
+            <span className="text-[12px] text-ink-faint">
+              Usage interne : le candidat ne le voit jamais.
+            </span>
           </label>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -111,12 +127,18 @@ export function CampaignForm({
           <label className="flex flex-col gap-1.5">
             <span className="text-[13px] text-ink-soft">Sujet de l'email</span>
             <input
-              name="sujet"
+              name="campagneSujet"
               required
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
               defaultValue={initial?.sujet}
               placeholder="{{prenom}}, une opportunité qui pourrait vous intéresser"
               className="rounded-lg border border-line bg-card px-3 py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
             />
+            <span className="text-[12px] text-ink-faint">
+              C'est la ligne que le candidat verra dans sa boîte mail.
+            </span>
           </label>
 
           <div className="flex flex-col gap-1.5">

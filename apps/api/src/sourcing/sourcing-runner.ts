@@ -237,23 +237,33 @@ export class SourcingRunner {
       }
     }
 
+    let ignores = 0;
     await withTenant(tenantId, async (tx) => {
       if (scored.length > 0) {
-        await tx.insert(schema.sourcingCandidates).values(
-          scored.map((c) => ({
-            tenantId,
-            jobId,
-            source: "linkedin" as const,
-            score: c.score,
-            statutScoring: c.statutScoring,
-            scoringErreur: c.scoringErreur,
-            scoringJustification: c.scoringJustification,
-            scoringCriteres: c.scoringCriteres,
-            scoringTentatives: 1,
-            profil: c.profil,
-            statutValidation: "a_valider" as const,
-          })),
-        );
+        // onConflictDoNothing : relancer une recherche ramène évidemment les
+        // mêmes profils. Sans cette clause, l'index d'unicité ferait échouer
+        // tout le lot — et sans l'index, chaque relance dupliquait la
+        // shortlist entière. Le recruteur évaluait deux fois la même personne.
+        const inseres = await tx
+          .insert(schema.sourcingCandidates)
+          .values(
+            scored.map((c) => ({
+              tenantId,
+              jobId,
+              source: "linkedin" as const,
+              score: c.score,
+              statutScoring: c.statutScoring,
+              scoringErreur: c.scoringErreur,
+              scoringJustification: c.scoringJustification,
+              scoringCriteres: c.scoringCriteres,
+              scoringTentatives: 1,
+              profil: c.profil,
+              statutValidation: "a_valider" as const,
+            })),
+          )
+          .onConflictDoNothing()
+          .returning({ id: schema.sourcingCandidates.id });
+        ignores = scored.length - inseres.length;
       }
       await tx
         .update(schema.rawScrapeResults)
@@ -261,10 +271,14 @@ export class SourcingRunner {
         .where(eq(schema.rawScrapeResults.id, rawId));
     });
 
-    await this.marquer(tenantId, jobId, "termine", { candidats: scored.length });
+    // Les profils déjà présents ne comptent pas comme nouveaux : annoncer
+    // « 10 candidats » après une relance qui n'en a apporté aucun ferait
+    // chercher au recruteur des fiches qui n'existent pas.
+    await this.marquer(tenantId, jobId, "termine", { candidats: scored.length - ignores });
 
     this.logger.log(
-      `Sourcing auto terminé pour ${jobId}: ${scored.length - echecs - nonEvaluables} candidat(s) scoré(s)` +
+      `Sourcing auto terminé pour ${jobId}: ${scored.length - echecs - nonEvaluables - ignores} nouveau(x) candidat(s) scoré(s)` +
+        (ignores > 0 ? `, ${ignores} déjà présent(s) dans la shortlist` : "") +
         (echecs > 0 ? `, ${echecs} en échec de scoring (conservés)` : "") +
         (nonEvaluables > 0 ? `, ${nonEvaluables} profil(s) trop incomplet(s) pour être noté(s)` : "") +
         ".",
