@@ -46,7 +46,40 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (response.status === 401) redirect("/connexion");
   if (!response.ok) {
-    throw new Error(`API ${path} failed: ${response.status} ${await response.text()}`);
+    throw new ApiError(response.status, await response.text(), path);
   }
   return response.json() as Promise<T>;
+}
+
+/**
+ * Échec d'appel API portant le message destiné à l'utilisateur.
+ *
+ * Avant, l'erreur était une chaîne du type « API /jobs failed: 403 {json} » :
+ * la phrase que l'API avait pris soin de rédiger — quelle limite, quelle
+ * formule, quoi faire — s'y trouvait noyée, et l'interface affichait soit le
+ * brut, soit un message générique. `messageUtilisateur` la restitue.
+ */
+export class ApiError extends Error {
+  readonly statut: number;
+  readonly messageUtilisateur: string;
+
+  constructor(statut: number, corps: string, chemin: string) {
+    super(`API ${chemin} failed: ${statut} ${corps}`);
+    this.name = "ApiError";
+    this.statut = statut;
+    this.messageUtilisateur = extraireMessage(corps);
+  }
+}
+
+/** Récupère `message` du corps NestJS, sans se casser sur une réponse non-JSON. */
+function extraireMessage(corps: string): string {
+  try {
+    const parsed = JSON.parse(corps) as { message?: unknown };
+    if (typeof parsed.message === "string" && parsed.message.trim()) return parsed.message;
+    // NestJS renvoie un tableau quand plusieurs validations échouent.
+    if (Array.isArray(parsed.message) && parsed.message.length > 0) return String(parsed.message[0]);
+  } catch {
+    // Corps non-JSON : on retombe sur le message générique ci-dessous.
+  }
+  return "L'opération a échoué. Réessayez dans un moment.";
 }
