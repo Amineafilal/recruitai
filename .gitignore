@@ -19,3 +19,6 @@ dist/
 
 # Lien local vers le projet Vercel (propre à chaque machine).
 .vercel
+
+.vercel
+.env*

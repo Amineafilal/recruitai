@@ -1,5 +1,6 @@
 import { createMistralProvider } from "./providers/mistral.js";
 import { createOpenAiProvider } from "./providers/openai.js";
+import { PLAFOND_PROFIL_NON_DOCUMENTE, profilDocumente } from "./types.js";
 import type { ScoringInput, ScoringProvider, ScoringResult } from "./types.js";
 
 export type {
@@ -10,7 +11,13 @@ export type {
   CriteresEvalues,
   CleCritere,
 } from "./types.js";
-export { CRITERES_SCORING, calculerScore, scorePlafonne } from "./types.js";
+export {
+  CRITERES_SCORING,
+  calculerScore,
+  scorePlafonne,
+  profilDocumente,
+  PLAFOND_PROFIL_NON_DOCUMENTE,
+} from "./types.js";
 
 /**
  * Mistral is the default provider (données EU, argument RGPD), OpenAI is a
@@ -35,10 +42,24 @@ export async function scoreCandidate(input: ScoringInput): Promise<ScoringResult
   let lastError: unknown;
   for (const provider of providers) {
     try {
-      return await provider.score(input);
+      return plafonnerSiNonDocumente(await provider.score(input), input.profil);
     } catch (err) {
       lastError = err;
     }
   }
   throw new Error(`All scoring providers failed. Last error: ${String(lastError)}`);
+}
+
+/**
+ * Applique le plafond des profils non documentés.
+ *
+ * Placé ici, après le fournisseur : c'est le seul endroit qui voit à la fois
+ * la note et le profil d'origine. Le mettre dans calculerScore() était
+ * impossible — cette fonction ne connaît que les quatre critères, pas la
+ * matière dont ils sont tirés.
+ */
+function plafonnerSiNonDocumente(resultat: ScoringResult, profil: unknown): ScoringResult {
+  if (resultat.score === null || resultat.score <= PLAFOND_PROFIL_NON_DOCUMENTE) return resultat;
+  if (profilDocumente(profil)) return resultat;
+  return { ...resultat, score: PLAFOND_PROFIL_NON_DOCUMENTE, plafonneParDocumentation: true };
 }

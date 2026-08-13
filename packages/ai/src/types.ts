@@ -80,6 +80,12 @@ export interface ScoringResult {
    * rien à noter. À distinguer d'un scoring en panne, qui mérite un réessai.
    */
   score: number | null;
+  /**
+   * Vrai quand le total a été ramené à PLAFOND_PROFIL_NON_DOCUMENTE faute de
+   * données vérifiables. Le recruteur doit pouvoir lire pourquoi un profil aux
+   * composantes maximales n'affiche pas 100.
+   */
+  plafonneParDocumentation?: boolean;
   /** Phrase de synthèse, conservée pour l'affichage résumé. */
   justification: string;
   /** Détail par critère, pour expliquer la note au recruteur. */
@@ -105,6 +111,51 @@ export interface ScoringResult {
  * rehausser une note, jamais compenser l'absence du savoir-faire recherché.
  */
 const MARGE_AU_DESSUS_DES_COMPETENCES = 25;
+
+/**
+ * Plafond d'un profil dont rien n'est vérifiable au-delà de son intitulé.
+ *
+ * Les sources gratuites ne renvoient souvent qu'une ligne de titre : ni
+ * employeurs, ni dates, ni formation. L'IA note alors l'expérience ET la
+ * séniorité à partir de la même phrase, et un « Data Analyst | PL-300
+ * Certified » ressort à 100/100 sans qu'aucune de ces deux notes repose sur
+ * un fait vérifiable.
+ *
+ * 85 et non moins : la valeur laisse le classement intact — seuls les profils
+ * qui dépassaient ce seuil sont ramenés — tout en réservant la tranche haute,
+ * celle qu'un recruteur lit comme « candidat idéal », aux profils réellement
+ * documentés. Un titre qui colle n'est pas une candidature excellente.
+ */
+export const PLAFOND_PROFIL_NON_DOCUMENTE = 85;
+
+/**
+ * Vrai si le profil apporte autre chose que son intitulé : un poste avec son
+ * employeur ou ses dates, une formation, ou une localisation renseignée par
+ * la source.
+ *
+ * Le texte de présentation ne compte PAS : un candidat y écrit ce qu'il veut,
+ * et c'est précisément la matière que l'IA paraphrase déjà.
+ */
+export function profilDocumente(profil: unknown): boolean {
+  if (!profil || typeof profil !== "object") return false;
+  const p = profil as Record<string, unknown>;
+
+  const postes = [
+    ...(Array.isArray(p.experience) ? p.experience : []),
+    ...(Array.isArray(p.currentPositions) ? p.currentPositions : []),
+  ];
+  // Un poste réduit à son titre n'apprend rien de plus que le headline.
+  const posteDetaille = postes.some((poste) => {
+    if (!poste || typeof poste !== "object") return false;
+    const o = poste as Record<string, unknown>;
+    return Boolean(o.companyName || o.startedOn || o.tenureAtPosition || o.tenureAtCompany);
+  });
+
+  const formation = Array.isArray(p.education) && p.education.length > 0;
+  const localisation = typeof p.location === "string" ? p.location.trim() !== "" : Boolean(p.location);
+
+  return posteDetaille || formation || localisation;
+}
 
 export function calculerScore(criteres: CriteresEvalues): number | null {
   let somme = 0;
