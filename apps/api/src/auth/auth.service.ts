@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getAdminDb, schema } from "@recruitai/db";
 import { MailerService } from "../mail/mailer.service.js";
+import { verifierQuotaAcceptation } from "../team/quota-recruteurs.js";
 import { genererToken, hashToken } from "./tokens.js";
 
 export interface SessionUser {
@@ -206,6 +207,11 @@ export class AuthService {
     if (existant) {
       throw new ConflictException("Un compte existe déjà avec cet email. Connectez-vous.");
     }
+
+    // Contrôle final, même si l'envoi de l'invitation était déjà filtré :
+    // entre l'envoi et l'acceptation, un siège a pu être pris autrement — une
+    // autre invitation acceptée plus vite, ou une formule rétrogradée.
+    await verifierQuotaAcceptation(invit.tenantId);
 
     const passwordHash = await bcrypt.hash(motDePasse, 10);
     const [user] = await db

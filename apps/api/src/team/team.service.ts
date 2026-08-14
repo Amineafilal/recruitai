@@ -4,6 +4,7 @@ import { getAdminDb, withTenant, schema } from "@recruitai/db";
 import type { UserRole } from "@recruitai/types";
 import { MailerService } from "../mail/mailer.service.js";
 import { genererToken, hashToken } from "../auth/tokens.js";
+import { verifierQuotaInvitation } from "./quota-recruteurs.js";
 
 /** Une invitation reste valable une semaine. */
 const INVITATION_TTL_JOURS = 7;
@@ -68,6 +69,12 @@ export class TeamService {
   ): Promise<{ email: string; lien: string | null; envoye: boolean; raison?: string }> {
     const normalized = email.trim().toLowerCase();
     const db = getAdminDb();
+
+    // Contrôlé AVANT l'envoi : découvrir la limite après avoir reçu un lien et
+    // choisi un mot de passe serait une promesse qu'on ne peut pas tenir.
+    // L'email est exclu du décompte car réinviter quelqu'un remplace son jeton
+    // au lieu d'occuper un second siège.
+    await verifierQuotaInvitation(tenantId, normalized);
 
     // Vérification cross-tenant volontaire : un email ne peut appartenir qu'à
     // une seule agence (users_email_unique_idx est global). Sans ce contrôle,
