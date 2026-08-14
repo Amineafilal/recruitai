@@ -38,8 +38,17 @@ RUN npm ci --omit=dev --workspace=@recruitai/api --include-workspace-root
 COPY packages ./packages
 COPY apps/api ./apps/api
 
-# Indicatif : le port réel est imposé par l'hébergeur via la variable PORT,
-# que main.ts lit en priorité.
+# Port par défaut du conteneur.
+#
+# EXPOSE annonçait 8000 alors que main.ts, faute de variable PORT, retombait
+# sur 3001 : le conteneur démarrait sans la moindre erreur et rien n'atteignait
+# jamais l'API. Render et Railway masquaient le défaut en injectant leur propre
+# PORT, qui prime sur cette valeur — il n'apparaissait que chez un hébergeur
+# qui, lui, route vers le port déclaré sans rien injecter.
+#
+# Les deux valeurs doivent rester alignées : changer l'une sans l'autre
+# ramènerait exactement le même piège.
+ENV PORT=8000
 EXPOSE 8000
 
 CMD ["npm", "run", "start", "--workspace=@recruitai/api"]
