@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { apiFetch, rethrowIfNavigation } from "@/lib/api";
+import { ApiError, apiFetch, rethrowIfNavigation } from "@/lib/api";
 
 /** Villes saisies via VillesInput : plusieurs champs de même nom. */
 function lireVilles(formData: FormData): string[] {
@@ -13,7 +13,13 @@ function lireVilles(formData: FormData): string[] {
     .slice(0, 8);
 }
 
-export async function createJob(formData: FormData) {
+/**
+ * Renvoie `{ error }` au lieu de laisser remonter l'exception : la création
+ * peut désormais être refusée légitimement — quota de postes de la formule
+ * atteint — et ce refus doit s'afficher dans le formulaire, pas remplacer
+ * l'application par une page d'erreur.
+ */
+export async function createJob(formData: FormData): Promise<{ error?: string } | void> {
   const titre = String(formData.get("titre") ?? "").trim();
   const seniorite = String(formData.get("seniorite") ?? "").trim();
   const secteur = String(formData.get("secteur") ?? "").trim();
@@ -22,19 +28,24 @@ export async function createJob(formData: FormData) {
     .map((c) => c.trim())
     .filter(Boolean);
 
-  if (!titre) return;
+  if (!titre) return { error: "L'intitulé du poste est obligatoire." };
 
-  await apiFetch("/jobs", {
-    method: "POST",
-    body: JSON.stringify({
-      titre,
-      localisations: lireVilles(formData),
-      seniorite: seniorite || undefined,
-      // Chaîne vide interdite par le schéma : « tous secteurs » vaut absence.
-      secteur: secteur || undefined,
-      competences,
-    }),
-  });
+  try {
+    await apiFetch("/jobs", {
+      method: "POST",
+      body: JSON.stringify({
+        titre,
+        localisations: lireVilles(formData),
+        seniorite: seniorite || undefined,
+        // Chaîne vide interdite par le schéma : « tous secteurs » vaut absence.
+        secteur: secteur || undefined,
+        competences,
+      }),
+    });
+  } catch (err) {
+    rethrowIfNavigation(err);
+    return { error: err instanceof ApiError ? err.messageUtilisateur : "Création impossible." };
+  }
 
   revalidatePath("/postes");
 }

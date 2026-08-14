@@ -8,6 +8,7 @@ import { createJob } from "./actions";
 export function NewJobButton() {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [erreur, setErreur] = useState<string | null>(null);
   // Le secteur pilote les exemples des deux champs libres. Un cabinet qui
   // recrute en hôtellerie ne doit jamais lire « Développeur React ».
   const [secteur, setSecteur] = useState<string>("");
@@ -16,9 +17,14 @@ export function NewJobButton() {
 
   async function action(formData: FormData) {
     setPending(true);
+    setErreur(null);
     try {
-      await createJob(formData);
-      setOpen(false);
+      // Un refus légitime — quota de postes atteint — arrive sous forme de
+      // message, pas d'exception : il s'affiche dans le formulaire, qui reste
+      // ouvert avec les valeurs saisies.
+      const res = await createJob(formData);
+      if (res?.error) setErreur(res.error);
+      else setOpen(false);
     } finally {
       setPending(false);
     }
@@ -94,6 +100,11 @@ export function NewJobButton() {
                 label="Compétences (séparées par des virgules)"
                 placeholder={modele?.exempleCompetences ?? "Compétences attendues, séparées par des virgules"}
               />
+              {erreur && (
+                <p className="rounded-lg bg-danger-soft px-3 py-2 text-[13px] font-medium leading-relaxed text-danger">
+                  {erreur}
+                </p>
+              )}
               <div className="mt-2 flex justify-end gap-2">
                 <button
                   type="button"
