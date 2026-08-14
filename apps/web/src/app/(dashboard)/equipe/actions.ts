@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { apiFetch, rethrowIfNavigation } from "@/lib/api";
+import { ApiError, apiFetch, rethrowIfNavigation } from "@/lib/api";
 
 /**
  * L'invitation est toujours créée. Si l'email n'a pas pu partir, l'API renvoie
@@ -61,13 +61,9 @@ export async function changerRole(id: string, role: "admin" | "recruteur"): Prom
  */
 function messageErreur(err: unknown, defaut: string): string {
   rethrowIfNavigation(err);
-  const brut = err instanceof Error ? err.message : "";
-  const json = brut.slice(brut.indexOf("{"));
-  try {
-    const corps = JSON.parse(json) as { message?: unknown };
-    if (typeof corps.message === "string") return corps.message;
-  } catch {
-    // Réponse non-JSON : on retombe sur le message générique.
-  }
+  // ApiError porte le message rédigé par l'API. Cette fonction le redécoupait
+  // elle-même à partir du premier « { » de la chaîne d'erreur — une heuristique
+  // qui se serait cassée sur un chemin d'URL contenant une accolade.
+  if (err instanceof ApiError) return err.messageUtilisateur;
   return defaut;
 }
